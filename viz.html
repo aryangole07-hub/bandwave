@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+<title>Bandwave</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; cursor: default; user-select: none;
+    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; color: #fff; }
+  body.drag { -webkit-app-region: drag; }
+  body.drag button { -webkit-app-region: no-drag; }
+  #bg { position: absolute; inset: -8%; background-size: cover; background-position: center; transition: opacity 900ms ease-out; will-change: transform; }
+  #stage { position: absolute; inset: 0; will-change: filter; }
+  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #glow { mix-blend-mode: screen; }
+  #disc { position: absolute; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 700ms ease-out;
+    box-shadow: 0 0 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08); will-change: transform; pointer-events: none; }
+  #disc.on { opacity: 1; }
+
+  #card { position: absolute; display: flex; align-items: center; gap: 18px; padding: 14px 22px 14px 14px; border-radius: 22px;
+    background: rgba(12, 12, 18, .38); backdrop-filter: blur(22px) saturate(1.4); box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset;
+    opacity: 0; transform: translateY(12px); transition: opacity 600ms cubic-bezier(.2,.8,.2,1), transform 600ms cubic-bezier(.2,.8,.2,1); max-width: 40vw; }
+  #card.on { opacity: 1; transform: none; }
+  #card.bottom-left { left: 3.2vw; bottom: 5.5vh; }
+  #card.bottom-center { left: 50%; bottom: 5.5vh; translate: -50% 0; }
+  #card.top-left { left: 3.2vw; top: 5vh; }
+  #card img { width: 74px; height: 74px; border-radius: 14px; object-fit: cover; box-shadow: 0 8px 26px rgba(0,0,0,.45); }
+  #card .t { font-size: 20px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #card .a { font-size: 15px; opacity: .7; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #card .ctl { display: flex; gap: 4px; margin-top: 8px; }
+  #card button { all: unset; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+    transition: background 160ms ease-out, transform 220ms cubic-bezier(.3,1.5,.5,1); }
+  #card button:hover { background: rgba(255,255,255,.12); }
+  #card button:active { transform: scale(.9); }
+  #card svg { width: 18px; height: 18px; fill: #fff; }
+  #card .meta { min-width: 0; }
+  body.fs #card { left: 50%; bottom: 7vh; top: auto; translate: -50% 0; padding: 18px 30px 18px 18px; }
+  body.fs #card img { width: 110px; height: 110px; }
+  body.fs #card .t { font-size: 28px; }
+  body.fs #card .a { font-size: 19px; }
+
+  #clock { position: absolute; top: 4.5vh; right: 3.4vw; text-align: right; opacity: 0; transition: opacity 600ms ease-out;
+    text-shadow: 0 2px 30px rgba(0,0,0,.4); font-variant-numeric: tabular-nums; }
+  #clock.on { opacity: .92; }
+  #clock .h { font-size: clamp(48px, 6.2vw, 120px); font-weight: 200; letter-spacing: -.03em; line-height: 1; }
+  #clock .d { font-size: clamp(14px, 1.1vw, 22px); opacity: .7; margin-top: 6px; letter-spacing: .04em; }
+  #hint { position: absolute; top: 20px; left: 50%; translate: -50% 0; font-size: 13px; opacity: 0; transition: opacity 400ms; background: rgba(0,0,0,.4); padding: 6px 12px; border-radius: 99px; }
+  body.fs #hint { opacity: .55; animation: hide 0s 4s forwards; }
+  @keyframes hide { to { opacity: 0; } }
+</style>
+</head>
+<body>
+  <div id="bg"></div>
+  <div id="stage"><canvas id="viz"></canvas><canvas id="glow"></canvas></div>
+  <img id="disc" alt="">
+  <div id="card">
+    <img id="cover" alt="">
+    <div class="meta">
+      <div class="t" id="title"></div>
+      <div class="a" id="artist"></div>
+      <div class="ctl">
+        <button id="prev" title="Previous" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+        <button id="pp" title="Play / pause" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path id="ppIcon" d="M7 5v14l12-7z"/></svg></button>
+        <button id="next" title="Next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div id="clock"><div class="h" id="clockH"></div><div class="d" id="clockD"></div></div>
+  <div id="hint">Space play / pause · ← → skip · Esc exit</div>
+  <script src="viz.js"></script>
+</body>
+</html>
