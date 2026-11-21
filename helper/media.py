@@ -82,10 +82,17 @@ async def main():
     state = {"session": None}
 
     async def command(line):
+        try:
+            await run(line)
+        except Exception as e:  # run_coroutine_threadsafe would swallow it
+            out({"type": "log", "msg": f"{line.strip()}: {type(e).__name__}: {e}"})
+
+    async def run(line):
         cmd, _, arg = line.strip().partition(" ")
         s = state["session"]
         if cmd == "wallpaper":
             wallpaper(int(arg))
+            out({"type": "log", "msg": f"pinned {arg} under WorkerW"})
         elif cmd == "unwallpaper":
             u32.SetParent(int(arg), None)
         elif s and cmd == "play_pause":

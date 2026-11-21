@@ -35,6 +35,7 @@ function startHelper() {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       try {
         const m = JSON.parse(line);
+        if (m.type === "log") console.log("[helper]", m.msg);
         if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); }
       } catch {}
     }
