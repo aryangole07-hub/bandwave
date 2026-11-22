@@ -11,6 +11,7 @@
   body.drag button { -webkit-app-region: no-drag; }
   #bg { position: absolute; inset: -8%; background-size: cover; background-position: center; transition: opacity 900ms ease-out; }
   #stage { position: absolute; inset: 0; }
+  #tint { position: absolute; inset: 0; opacity: 0; transition: opacity 900ms ease-out; }
   #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #glow { mix-blend-mode: screen; }
   /* Spinning record: vinyl grooves + album-art label + song name around the groove; lyrics float on top (not spinning). */
@@ -48,7 +49,9 @@
     font-family: "Bahnschrift", "Segoe UI Variable Display", sans-serif; font-variation-settings: "wght" 420, "wdth" 100; text-wrap: balance; }
   .ln.d1 { opacity: .42; filter: blur(1.4px); transform: scale(.8); }
   .ln.d2 { opacity: .14; filter: blur(3px); transform: scale(.72); }
-  .ln.cur { opacity: 1; filter: none; transform: scale(calc(1 + var(--beat, 0) * .07));
+  /* beat bounce: big kick on each beat, shrinking back between beats; loud passages swell, quiet ones shrink */
+  .ln.cur { opacity: 1; filter: none; transform: scale(calc(1 + var(--beat, 0) * .32 + var(--swell, 0)));
+    transition: opacity 700ms cubic-bezier(.2,.8,.2,1), filter 700ms cubic-bezier(.2,.8,.2,1), transform 70ms linear;
     font-variation-settings: "wght" var(--wght, 520), "wdth" var(--wdth, 100); letter-spacing: var(--ls, 0); }
   .ln.chorus { text-transform: uppercase; letter-spacing: .03em; }
   .ln.loud { font-style: italic; }
@@ -104,6 +107,7 @@
 </head>
 <body>
   <div id="bg"></div>
+  <div id="tint"></div>
   <div id="stage"><canvas id="viz"></canvas><canvas id="glow"></canvas></div>
   <div id="rec">
     <div id="spin">

@@ -26,7 +26,7 @@ const DEFAULTS = {
   rounded: true,
   fill: true,               // curve: fill under the line
   layers: 3,                // curve: echo layers trailing the main line
-  theme: "nebula",          // nebula | sunset | ocean | neon | fire | ice | cover | custom
+  theme: "nebula",          // nebula | sunset | ocean | neon | fire | ice | album (colours from the cover) | custom
   custom: "#7c5cff",
   colorBy: "position",      // position | level
   hueDrift: 0.02,           // hue turns per second
@@ -42,12 +42,13 @@ const DEFAULTS = {
   barShake: 0,              // bands jitter with their own loudness (0 = off)
 
   // Scene
-  background: "cover",      // cover | gradient | black
+  background: "blend",      // blend (live average of the on-screen colours over the album art) | cover | gradient | black
   bgDim: 0.6,
   coverCenter: true,        // spinning record in the centre (album art label, song name around the groove)
   spin: 0.12,               // record turns per second while playing
   lyrics: true,             // time-synced lyrics inside the record (LRCLIB)
   lyricsOffset: 0,
+  lyricsBounce: 1,          // how hard the current lyric line kicks on the beat (0 = still)
   lyricsPos: "bottom-left", // bottom-left (above the now-playing card) | record (inside the spinning record)          // seconds; + shows lines earlier
   card: "bottom-left",      // bottom-left | bottom-center | top-left | hidden
   clock: true, clock24: false,

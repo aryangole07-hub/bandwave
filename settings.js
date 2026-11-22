@@ -32,7 +32,7 @@ const SCHEMA = [
     ["layers", "Echo layers", "range", 1, 6, 1, (v) => v, (s) => s.style === "curve"],
   ]],
   ["Colour", [
-    ["theme", "Theme", "seg", ["nebula", "sunset", "ocean", "neon", "fire", "ice", "cover", "custom"]],
+    ["theme", "Theme", "seg", ["album", "nebula", "sunset", "ocean", "neon", "fire", "ice", "custom"]],
     ["custom", "Custom colour", "color", (s) => s.theme === "custom"],
     ["colorBy", "Colour by", "seg", ["position", "level"]],
     ["flow", "Colour flow", "range", 0, 0.6, 0.01, (v) => (v ? v.toFixed(2) + " /s" : "off")],
@@ -52,12 +52,13 @@ const SCHEMA = [
   ]],
   ["Scene", [
     ["mode", "Show", "seg", ["wallpaper", "window", "ontop"]],
-    ["background", "Background", "seg", ["cover", "gradient", "black"]],
-    ["bgDim", "Darken background", "range", 0, 0.95, 0.01, pct],
+    ["background", "Background", "seg", ["blend", "cover", "gradient", "black"]],
+    ["bgDim", "Background strength", "range", 0, 0.95, 0.01, pct, null, "Blend: how much the live colour covers the album art (lower lets the album shine through)."],
     ["coverCenter", "Spinning record", "toggle"],
     ["spin", "Record speed", "range", 0, 0.6, 0.01, (v) => (v ? v.toFixed(2) + " /s" : "still"), (s) => s.coverCenter],
     ["lyrics", "Lyrics", "toggle"],
     ["lyricsPos", "Lyrics position", "seg", ["bottom-left", "record"], (s) => s.lyrics],
+    ["lyricsBounce", "Lyrics beat bounce", "range", 0, 2, 0.05, pct, (s) => s.lyrics],
     ["lyricsOffset", "Lyrics timing", "range", -2, 2, 0.1, (v) => (v > 0 ? "+" : "") + v.toFixed(1) + " s", (s) => s.lyrics, "If the words run late, move right; early, move left."],
     ["card", "Now playing card", "seg", ["bottom-left", "bottom-center", "top-left", "hidden"]],
     ["clock", "Clock", "toggle"],
@@ -70,7 +71,7 @@ const SCHEMA = [
 ];
 const PRESETS = {
   "Nebula ring": { shape: "circle", style: "bars", bands: 96, symmetric: true, theme: "nebula", glow: 0.8, trails: 0.5, rotate: 0.04, coverCenter: true, size: 0.22, length: 0.3 },
-  "Liquid aurora": { shape: "circle", style: "curve", layers: 4, fill: true, bands: 64, theme: "cover", glow: 1, trails: 0.75, hueDrift: 0.03, rotate: 0.02, size: 0.24 },
+  "Liquid aurora": { shape: "circle", style: "curve", layers: 4, fill: true, bands: 64, theme: "album", glow: 1, trails: 0.75, hueDrift: 0.03, rotate: 0.02, size: 0.24 },
   "Neon skyline": { shape: "line", style: "bars", bands: 140, symmetric: true, mirror: true, theme: "neon", glow: 0.9, trails: 0.35, length: 0.32, thickness: 0.55, coverCenter: false },
   "Heartbeat": { shape: "heart", style: "dots", bands: 120, symmetric: true, theme: "sunset", glow: 1, trails: 0.7, size: 0.2, length: 0.18, beatPulse: 1.1 },
   "Hex blocks": { shape: "polygon", sides: 6, style: "blocks", bands: 36, symmetric: true, theme: "fire", glow: 0.7, trails: 0.2, rotate: -0.03, size: 0.2, length: 0.3, thickness: 0.8 },

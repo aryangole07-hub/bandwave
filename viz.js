@@ -11,7 +11,7 @@ let analyser = null, freq = null, sr = 48000;
 let bands = [], raw = new Float32Array(0), levels = new Float32Array(0), hist = [];
 let pts = [], closed = true, cx = 0, cy = 0, R = 1, gap = 4;
 let rot = 0, hue = 0, pulse = 0, bassAvg = 0.1, lastBeat = 0, particles = [], last = performance.now();
-let lutHue = null, lut = [], flowPh = 0, energy = 0, spinAng = 0, spinVel = 0, recGlow = '';
+let lutHue = null, lutRGB = [], tint = [0, 0, 0], lut = [], flowPh = 0, energy = 0, spinAng = 0, spinVel = 0, recGlow = '';
 let pos = { pos: 0, at: 0, playing: false }, lyr = { key: null, lines: [] }, lyrIdx = -2, lyrLit = -1, lyrEls = [];
 const DEMO = new URLSearchParams(location.search).has("demo");                           // 256 palette colours
 
@@ -36,7 +36,8 @@ function rgb2hsl([r, g, b]) {
 let coverStops = null;
 function coverPalette(img) {
   const c = document.createElement("canvas"); c.width = c.height = 32;
-  const x = c.getContext("2d"); x.drawImage(img, 0, 0, 32, 32);
+  const x = c.getContext("2d"), cut = /spotify/i.test(media.app || "") ? 0.74 : 1;  // Spotify stamps its logo on the bottom of the art
+  x.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight * cut, 0, 0, 32, 32);
   const d = x.getImageData(0, 0, 32, 32).data, bucket = Array.from({ length: 12 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
   for (let i = 0; i < d.length; i += 4) {
     const [h, s, l] = rgb2hsl([d[i], d[i + 1], d[i + 2]]);
@@ -44,14 +45,17 @@ function coverPalette(img) {
     const w = s * s + 0.02, k = Math.floor(h * 12) % 12;
     Object.assign(bucket[k], { w: bucket[k].w + w, r: bucket[k].r + d[i] * w, g: bucket[k].g + d[i + 1] * w, b: bucket[k].b + d[i + 2] * w });
   }
+  let sat = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) { const [, s, l] = rgb2hsl([d[i], d[i + 1], d[i + 2]]); if (l > 0.08 && l < 0.97) { sat += s; n++; } }
+  if (!n || sat / n < 0.12) { coverStops = [[235, 238, 245], [150, 158, 175], [255, 255, 255]]; return; }  // black & white art: silver
   const top = bucket.filter((b) => b.w > 0).sort((a, b) => b.w - a.w).slice(0, 3)
-    .map((b) => { const [h, s] = rgb2hsl([b.r / b.w, b.g / b.w, b.b / b.w]); return hsl2rgb(h, Math.max(s, 0.7), 0.62); });
+    .map((b) => { const [h, s] = rgb2hsl([b.r / b.w, b.g / b.w, b.b / b.w]); return hsl2rgb(h, Math.min(1, Math.max(s, 0.55) * 1.15), 0.6); });
   while (top.length && top.length < 3) { const [h] = rgb2hsl(top[0]); top.push(hsl2rgb((h + 0.12 * top.length) % 1, 0.8, 0.62)); }
   coverStops = top.length ? top : null;
 }
 function buildLut() {
   let stops;
-  if (S.theme === "cover" && coverStops) stops = coverStops;
+  if ((S.theme === "album" || S.theme === "cover") && coverStops) stops = coverStops;
   else if (S.theme === "custom") { const [h, s] = rgb2hsl(hex(S.custom)); stops = [-0.09, 0, 0.09].map((o) => hsl2rgb((h + o + 1) % 1, Math.max(s, 0.7), 0.62)); }
   else stops = (THEMES[S.theme] || THEMES.nebula).map(hex);
   lutHue = hue;
@@ -60,7 +64,9 @@ function buildLut() {
   const cyc = [...stops, stops[0]];  // a -> b -> c -> a: no seam when the colours travel round
   for (let i = 0; i < 256; i++) {
     const x = (i / 256) * 3, j = Math.floor(x), f = x - j, a = cyc[j], b = cyc[j + 1];
-    lut.push(`rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`);
+    const c = a.map((v, k) => Math.round(v + (b[k] - v) * f));
+    lutRGB[i] = c;
+    lut.push(`rgb(${c.join(",")})`);
   }
   recGlow = lut[0].replace("rgb", "rgba").replace(")", ",.38)");
   if (S.background === "gradient") {
@@ -69,7 +75,8 @@ function buildLut() {
   }
 }
 // Colour travels along the shape (flowPh) with a slow ripple on top, so the gradient swirls rather than slides.
-const wrap = (x) => lut[(Math.floor((x - Math.floor(x)) * 256)) & 255];
+const slot = (x) => (Math.floor((x - Math.floor(x)) * 256)) & 255;
+const wrap = (x) => lut[slot(x)];
 const colour = (k, n, v) => wrap((S.colorBy === "level" ? v : k / n) + flowPh + 0.07 * Math.sin((k / n) * TAU * 3 + flowPh * TAU * 2));
 
 // ---------- bands ----------
@@ -298,7 +305,23 @@ function frame(now) {
   gl.style.opacity = S.glow * (0.75 + 0.5 * pulse);
   if (S.hueDrift && (lutHue === null || Math.abs(hue - lutHue) > 2)) buildLut();
   record(dt);
+  blendBackground(v, dt);
   lyricsFrame();
+}
+
+// ---------- blend background ----------
+function blendBackground(v, dt) {
+  if (S.background !== "blend") return;
+  const N = v.length;
+  let r = 0, g = 0, b = 0, w = 0;
+  for (let k = 0; k < N; k++) {
+    const x = (S.colorBy === "level" ? v[k] : k / N) + flowPh + 0.07 * Math.sin((k / N) * TAU * 3 + flowPh * TAU * 2);
+    const c = lutRGB[slot(x)], wt = v[k] * v[k] + 0.002;  // louder bands count more
+    r += c[0] * wt; g += c[1] * wt; b += c[2] * wt; w += wt;
+  }
+  const k = Math.min(1, dt * 3), lvl = 0.3 + 0.3 * clamp(energy, 0, 1);  // dark enough to stay a background, breathes with the music
+  tint = tint.map((t, i) => t + ([r, g, b][i] / w * lvl - t) * k);
+  $("tint").style.backgroundColor = `rgba(${tint.map(Math.round).join(",")},${clamp(S.bgDim + 0.15, 0, 0.95)})`;
 }
 
 // ---------- record + lyrics ----------
@@ -371,7 +394,8 @@ function lyricsFrame() {
   box.style.setProperty("--wght", Math.round(330 + 370 * e));
   box.style.setProperty("--wdth", Math.round(100 - 25 * e));
   box.style.setProperty("--ls", (0.02 - 0.03 * e).toFixed(3) + "em");
-  box.style.setProperty("--beat", pulse.toFixed(3));
+  box.style.setProperty("--beat", (pulse * (S.lyricsBounce ?? 1)).toFixed(3));
+  box.style.setProperty("--swell", ((e - 0.35) * 0.16 * (S.lyricsBounce ?? 1)).toFixed(3));
   box.style.setProperty("--litGlow", recGlow.replace(",.38)", ",.95)"));
 }
 
@@ -398,8 +422,10 @@ function resize() {
 function scene() {
   const bg = $("bg");
   bg.style.opacity = S.background === "black" ? 0 : 1;
-  if (S.background === "cover") bg.style.backgroundImage = media.cover ? `url("${media.cover}")` : "radial-gradient(circle, #1b1430, #05050a 75%)";
-  bg.style.filter = S.background === "cover" ? `blur(80px) saturate(1.6) brightness(${1 - S.bgDim})` : `brightness(${1.2 - S.bgDim})`;
+  $("tint").style.opacity = S.background === "blend" ? 1 : 0;
+  if (S.background === "cover" || S.background === "blend") bg.style.backgroundImage = media.cover ? `url("${media.cover}")` : "radial-gradient(circle, #1b1430, #05050a 75%)";
+  bg.style.filter = S.background === "cover" ? `blur(80px) saturate(1.6) brightness(${1 - S.bgDim})`
+    : S.background === "blend" ? "blur(80px) saturate(1.5) brightness(.8)" : `brightness(${1.2 - S.bgDim})`;
   $("rec").classList.toggle("on", !!S.coverCenter && !!media.title);
   $("ringText").textContent = media.title ? ringText() : "";
   $("card").className = `${S.card} ${S.card !== "hidden" && media.title ? "on" : ""}`;

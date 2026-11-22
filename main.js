@@ -23,7 +23,10 @@ let viz, settingsWin, tray, helper, media = { type: "media", title: null };
 let fullscreen = false, saveTimer, browseWin;
 
 function load() {
-  try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, "utf8")) }; } catch { return { ...DEFAULTS }; }
+  let s;
+  try { s = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, "utf8")) }; } catch { s = { ...DEFAULTS }; }
+  if (s.theme === "cover") s.theme = "album";  // renamed 2026-11-22
+  return s;
 }
 function save() {
   clearTimeout(saveTimer);
@@ -178,6 +181,8 @@ function buildTray() {
   const menu = () => Menu.buildFromTemplate([
     { label: "Settings", click: openSettings },
     { label: "Full screen  (Ctrl+Alt+F)", click: () => setFullscreen(!fullscreen) },
+    { label: "Album mode (colours from the cover)", type: "checkbox", checked: S.theme === "album",
+      click: () => set(S.theme === "album" ? { theme: S.prevTheme || "nebula" } : { prevTheme: S.theme, theme: "album" }) },
     { label: "Profiles", submenu: Object.keys(readProfiles()).length
         ? Object.keys(readProfiles()).sort((a, b) => a.localeCompare(b)).map((n) => ({ label: n, click: () => loadProfile(n) }))
         : [{ label: "No saved profiles yet", enabled: false }] },
@@ -199,7 +204,8 @@ function set(patch) {
   if ("startup" in patch) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: [app.getAppPath()] });  // unpackaged: electron.exe + this folder
   save();
   broadcast("settings", S);
-  if (modeChanged) { fullscreen = false; applyMode(); tray && tray.rebuild(); }
+  if (modeChanged) { fullscreen = false; applyMode(); }
+  if (modeChanged || "theme" in patch) tray && tray.rebuild();
 }
 
 app.whenReady().then(() => {
