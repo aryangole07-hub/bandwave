@@ -222,6 +222,25 @@ function syncSpotifyWatch() {
   else spawn("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | ? CommandLine -like '*spotify-watch.ps1*' | % { Stop-Process -Id $_.ProcessId -Force }"], { windowsHide: true });
 }
 
+// "Close with Spotify": quit when Spotify's process goes from running to gone. Never quits if Spotify was not
+// running to begin with (opening Bandwave on its own keeps it open).
+function watchSpotifyExit() {
+  if (TEST) return;
+  let seen = false;
+  setInterval(() => {
+    const p = spawn("tasklist.exe", ["/FI", "IMAGENAME eq Spotify.exe", "/NH"], { windowsHide: true });
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.on("error", () => {});
+    p.on("close", (code) => {
+      if (code !== 0) return;
+      const running = /spotify\.exe/i.test(out);
+      if (seen && !running && S.closeWithSpotify) { app.isQuitting = true; app.quit(); }
+      seen = running;
+    });
+  }, 4000);
+}
+
 function set(patch) {
   const modeChanged = "mode" in patch && patch.mode !== S.mode;
   S = { ...S, ...patch };
@@ -243,6 +262,7 @@ app.whenReady().then(() => {
   createViz();
   buildTray();
   syncSpotifyWatch();
+  watchSpotifyExit();
   globalShortcut.register("Control+Alt+F", () => setFullscreen(!fullscreen));
   globalShortcut.register("Control+Alt+Space", () => tell("play_pause"));
   globalShortcut.register("Control+Alt+Right", () => tell("next"));

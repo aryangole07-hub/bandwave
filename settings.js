@@ -69,6 +69,7 @@ const SCHEMA = [
     ["renderScale", "Render quality", "range", 0.35, 1, 0.05, pct, null, "Lower = lighter on the PC. 50% is a 1080p canvas; glow hides the difference on 4K."],
     ["fps", "Frame rate cap", "seg", [30, 60]],
     ["withSpotify", "Open with Spotify", "toggle"],
+    ["closeWithSpotify", "Close with Spotify", "toggle"],
     ["startup", "Start with Windows", "toggle"],
   ]],
 ];
