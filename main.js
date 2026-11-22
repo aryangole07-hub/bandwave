@@ -80,6 +80,7 @@ function startHelper() {
       try {
         const m = JSON.parse(line);
         if (m.type === "log") console.log("[helper]", m.msg);
+        if (m.type === "hit" || m.type === "bpm") { if (viz && !viz.isDestroyed()) viz.webContents.send(m.type, m); continue; }
         if (m.type === "spec") { if (viz && !viz.isDestroyed()) viz.webContents.send("spec", m.v); continue; }
         if (m.type === "pos") broadcast("pos", m);
         if (m.type === "browse" && browseWin && !browseWin.isDestroyed()) browseWin.webContents.send("browse", m);

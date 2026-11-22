@@ -40,7 +40,9 @@
   #rec.lyr #lyr { opacity: 1; }
   /* bottom-left lyrics panel (owner 2026-11-22): left-aligned, fades at top and bottom, sits above the now-playing card */
   #lyr.bl { position: absolute; left: 3.2vw; top: auto; bottom: calc(5.5vh + 128px); translate: none; width: min(40vw, 760px); height: 34vh;
-    border-radius: 0; background: none; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 72%, transparent); }
+    border-radius: 0; background: none; overflow: visible;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 72%, transparent);
+    -webkit-mask-size: 400% 100%; -webkit-mask-repeat: no-repeat; -webkit-mask-position: left top; }
   body.nocard #lyr.bl { bottom: 5.5vh; }
   body.lyr-on #lyr.bl { opacity: 1; }
   #lyr.bl #track { align-items: flex-start; }

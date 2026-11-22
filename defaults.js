@@ -26,6 +26,7 @@ const DEFAULTS = {
   rounded: true,
   fill: true,               // curve: fill under the line
   layers: 3,                // echo layers trailing the bands (all styles)
+  echoShadow: 0.6,          // shadow each newer echo layer casts on the older ones below it (0 = none)
   echoBeat: 0.25,           // each echo layer lags this fraction of a beat (tempo detected from the kicks)
   theme: "nebula",          // nebula | sunset | ocean | neon | fire | ice | album (colours from the cover) | custom
   custom: "#7c5cff",

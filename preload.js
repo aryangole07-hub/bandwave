@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("bw", {
   toggleBrowse: () => ipcRenderer.send("toggle-browse"),
   setBands: (edges) => ipcRenderer.send("bands", edges),
   onSpec: (fn) => ipcRenderer.on("spec", (_e, v) => fn(v)),
+  onHit: (fn) => ipcRenderer.on("hit", (_e, m) => fn(m)),
+  onBpm: (fn) => ipcRenderer.on("bpm", (_e, m) => fn(m)),
   browse: (cmd, arg) => ipcRenderer.send("browse", cmd, arg),
   onBrowse: (fn) => ipcRenderer.on("browse", (_e, m) => fn(m)),
   onBrowseOpen: (fn) => ipcRenderer.on("browse-open", () => fn()),

@@ -30,6 +30,7 @@ const SCHEMA = [
     ["rounded", "Rounded ends", "toggle", (s) => s.style === "bars"],
     ["fill", "Fill under curve", "toggle", (s) => s.style === "curve"],
     ["layers", "Echo layers", "range", 1, 6, 1, (v) => (v > 1 ? v - 1 : "off")],
+    ["echoShadow", "Echo shadows", "range", 0, 1, 0.05, (v) => (v ? Math.round(v * 100) + "%" : "off"), (s) => s.layers > 1],
     ["echoBeat", "Echo lag", "range", 0.0625, 1, 0.0625, (v) => (v >= 1 ? "1 beat" : `1/${Math.round(1 / v)} beat`), (s) => s.layers > 1, "Follows the song's tempo, detected from the kick drum."],
   ]],
   ["Colour", [

@@ -1,7 +1,8 @@
 // Bandwave visualizer: system audio -> FFT -> bands -> drawn around a shape, with beat pulse, glow, trails, particles.
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2;
-const cv = $("viz"), ctx = cv.getContext("2d");
+const cv = $("viz"), mainCtx = cv.getContext("2d");
+let ctx = mainCtx;  // draw() points this at the layer canvas while building an echo layer
 const gl = $("glow"), gctx = gl.getContext("2d");
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
@@ -134,9 +135,12 @@ function analyse(dt) {
   for (let i = 0; i < n; i++) if (bands[i].fc < 160) { bass += raw[i]; c++; }
   bass = c ? bass / c : raw[0] || 0;
   const now = performance.now();
-  if (bass > bassAvg * 1.3 + 0.04 && bass > 0.3 && now - lastBeat > 170) { lastBeat = now; pulse = 1; burst(); }
+  if (DEMO) {
+    if (bass > bassAvg * 1.3 + 0.04 && bass > 0.3 && now - lastBeat > 170) { lastBeat = now; pulse = 1; burst(); }
+    drums(now, dt);
+  } else beatClock(now);
   bassAvg += (bass - bassAvg) * Math.min(1, dt * 2.5);
-  drums(now, dt);
+  lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // falls back well before the next beat
   let all = 0; for (let i = 0; i < n; i++) all += levels[i];
   energy += ((n ? all / n : 0) * 1.6 - energy) * Math.min(1, dt * 4);
   pulse *= Math.pow(0.02, dt);
@@ -170,7 +174,22 @@ function drums(now, dt) {
     }
   }
   fluxAvg += (flux - fluxAvg) * k; fluxVar += ((flux - fluxAvg) ** 2 - fluxVar) * k;
-  lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // falls back well before the next beat
+}
+// Drum hits detected by the helper (kick / snare on the raw audio). The lyric bounce takes at most two per beat, so
+// it pumps with the groove instead of flickering on every percussion sound.
+let lastLyricHit = 0, bpmConf = 0, nextBeat = 0;
+window.bw.onHit((m) => {
+  const now = performance.now();
+  if (now - lastLyricHit >= beatMs * 0.45) { lyricPulse = Math.max(lyricPulse, m.s * (m.k === "kick" ? 1 : 0.75)); lastLyricHit = now; }
+  if (m.k === "kick") { pulse = Math.max(pulse, 0.6 + 0.4 * m.s); if (m.s > 0.5) burst(); nextBeat = now + beatMs; lastBeat = now; }
+});
+window.bw.onBpm((m) => { bpmConf = m.conf; if (m.conf >= 0.25) beatMs += (60000 / m.bpm - beatMs) * 0.5; });
+// a beat that passes with no detected hit (soft kick, busy mix) still gets a smaller bounce, on the tempo grid
+function beatClock(now) {
+  if (!nextBeat) nextBeat = now + beatMs;
+  if (now < nextBeat) return;
+  if (bpmConf > 0.3 && energy > 0.12 && now - lastLyricHit > beatMs * 0.6) { lyricPulse = Math.max(lyricPulse, 0.5); pulse = Math.max(pulse, 0.35); lastLyricHit = now; }
+  while (nextBeat <= now) nextBeat += beatMs;
 }
 const bpm = () => Math.round(60000 / beatMs);
 function histAt(ms) {  // the values as they were ms ago (echo layers lag by a fraction of the beat)
@@ -243,11 +262,11 @@ function smooth(c, P, isClosed) {
   }
   if (isClosed) c.closePath();
 }
-let gradCache = null, echoGradCache = null;
+let gradCache = {};
 const ECHO_SHADE = 0.7;  // echoes multiply by this shade: n overlapping echoes = colour x 0.7^n, darker with every overlap
 const shade = (x, f) => { const c = lutRGB[slot(x)]; return `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`; };
-function strokeGradient(echo) {
-  return echo ? echoGradCache || (echoGradCache = makeGradient(ECHO_SHADE)) : gradCache || (gradCache = makeGradient(1));
+function strokeGradient(f = 1) {
+  return gradCache[f] || (gradCache[f] = makeGradient(f));
 }
 function makeGradient(f) {
   const col = (x) => (f === 1 ? wrap(x) : shade(x, f));
@@ -260,66 +279,83 @@ function makeGradient(f) {
   for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, col(i / 8 + flowPh));
   return g;
 }
+// Echo layers stack oldest -> newest: newer beats sit on top of older ones and cast a soft shadow onto them; each
+// older layer is also a shade darker (0.7 per step), so the more echoes overlap, the darker it gets (owner 2026-11-22).
+// Each layer is drawn on its own canvas and placed with one shadowed drawImage (a shadow per bar would be far slower).
+let lay = null, lctx = null, sh = null, shctx = null;
 function draw(v) {
+  const N = pts.length, layers = clamp(S.layers | 0, 1, 6);
+  if (layers === 1) { drawLayer(v, 0, 1); return; }
+  if (!lay || lay.width !== W || lay.height !== H) {
+    lay = document.createElement("canvas"); lay.width = W; lay.height = H; lctx = lay.getContext("2d");
+    sh = document.createElement("canvas"); sh.width = W >> 2; sh.height = H >> 2; shctx = sh.getContext("2d");
+  }
+  const T = mainCtx.getTransform(), shadow = S.echoShadow ?? 0.6;
+  for (let L = layers - 1; L >= 0; L--) {
+    const src = L === 0 ? v : histAt(L * beatMs * (S.echoBeat || 0.25));
+    if (!src || src.length !== N) continue;
+    lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.clearRect(0, 0, W, H); lctx.setTransform(T);
+    ctx = lctx; drawLayer(src, L, Math.pow(ECHO_SHADE, L)); ctx = mainCtx;
+    mainCtx.save(); mainCtx.setTransform(1, 0, 0, 1, 0, 0);
+    if (shadow > 0 && L < layers - 1) {  // this (newer) layer's shadow falls on the older ones already drawn
+      shctx.clearRect(0, 0, sh.width, sh.height);
+      shctx.filter = `blur(${(1.5 + 3 * shadow).toFixed(1)}px) brightness(0)`;
+      shctx.drawImage(lay, 0, 0, sh.width, sh.height);
+      mainCtx.globalAlpha = 0.8 * shadow; mainCtx.drawImage(sh, 0, 0, W, H); mainCtx.globalAlpha = 1;
+    }
+    mainCtx.drawImage(lay, 0, 0);
+    mainCtx.restore();
+  }
+}
+// One layer (L = 0 live, L > 0 echo) in the chosen style, colours shaded by f.
+function drawLayer(src, L, f) {
   const N = pts.length, maxLen = S.length * Math.min(W, H), lw = Math.max(1, gap * S.thickness);
   const len = (x) => 2 * scale + x * maxLen;
-  ctx.lineCap = S.rounded ? "round" : "butt";
   if (S.style === "curve") {
-    const layers = clamp(S.layers | 0, 1, 6);
-    for (let L = layers - 1; L >= 0; L--) {
-      const src = L === 0 ? v : histAt(L * beatMs * (S.echoBeat || 0.25)) || v, grow = 1 + L * 0.12;
-      const tips = pts.map((p, k) => [p[0] + p[2] * len(src[k]) * grow, p[1] + p[3] * len(src[k]) * grow]);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = L === 0 ? "source-over" : "multiply";  // overlapping echoes darken each other
-      ctx.beginPath(); smooth(ctx, tips, closed);
-      if (S.fill) {
-        if (S.mirror) { const inner = pts.map((p, k) => [p[0] - p[2] * len(src[k]) * 0.5, p[1] - p[3] * len(src[k]) * 0.5]).reverse(); if (closed) { ctx.moveTo(inner[0][0], inner[0][1]); smooth(ctx, inner, true); } else { ctx.lineTo(inner[0][0], inner[0][1]); for (const p of inner) ctx.lineTo(p[0], p[1]); } }
-        else if (closed) { const base = [...pts].reverse(); ctx.moveTo(base[0][0], base[0][1]); for (const p of base) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
-        else { for (let k = N - 1; k >= 0; k--) ctx.lineTo(pts[k][0], pts[k][1]); ctx.closePath(); }
-        ctx.save(); ctx.globalAlpha *= L === 0 ? 0.28 : 0.55; ctx.fillStyle = strokeGradient(L > 0); ctx.fill("evenodd"); ctx.restore();
-      }
-      ctx.beginPath(); smooth(ctx, tips, closed);
-      ctx.lineWidth = Math.max(1.5 * scale, lw * 0.55); ctx.strokeStyle = strokeGradient(L > 0); ctx.stroke();
+    const grow = 1 + L * 0.12;
+    const tips = pts.map((p, k) => [p[0] + p[2] * len(src[k]) * grow, p[1] + p[3] * len(src[k]) * grow]);
+    ctx.beginPath(); smooth(ctx, tips, closed);
+    if (S.fill) {
+      if (S.mirror) { const inner = pts.map((p, k) => [p[0] - p[2] * len(src[k]) * 0.5, p[1] - p[3] * len(src[k]) * 0.5]).reverse(); if (closed) { ctx.moveTo(inner[0][0], inner[0][1]); smooth(ctx, inner, true); } else { ctx.lineTo(inner[0][0], inner[0][1]); for (const p of inner) ctx.lineTo(p[0], p[1]); } }
+      else if (closed) { const base = [...pts].reverse(); ctx.moveTo(base[0][0], base[0][1]); for (const p of base) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
+      else { for (let k = N - 1; k >= 0; k--) ctx.lineTo(pts[k][0], pts[k][1]); ctx.closePath(); }
+      ctx.save(); ctx.globalAlpha = L === 0 ? 0.28 : 0.6; ctx.fillStyle = strokeGradient(f); ctx.fill("evenodd"); ctx.restore();
     }
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+    ctx.beginPath(); smooth(ctx, tips, closed);
+    ctx.lineWidth = Math.max(1.5 * scale, lw * 0.55); ctx.lineCap = "round"; ctx.strokeStyle = strokeGradient(f); ctx.stroke();
     return;
   }
-  const layers = clamp(S.layers | 0, 1, 6);
-  for (let L = layers - 1; L >= 1; L--) {
-    const src = histAt(L * beatMs * (S.echoBeat || 0.25));
-    if (!src || src.length !== N) break;
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "multiply"; ctx.lineWidth = lw; ctx.lineCap = "butt";
-    for (let k = 0; k < N; k++) {
-      const [x, y, nx, ny] = pts[k], h = len(src[k]) * (1 + L * 0.06), cap = Math.max(2 * scale, lw * 0.5);
-      ctx.strokeStyle = shade((S.colorBy === "level" ? src[k] : k / N) + flowPh, ECHO_SHADE);
-      ctx.beginPath(); ctx.moveTo(x + nx * h, y + ny * h); ctx.lineTo(x + nx * (h + cap), y + ny * (h + cap)); ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.lineCap = S.rounded ? "round" : "butt";
-  const jit = (S.barShake || 0) * gap * 2.2;  // bar shake: each band jitters with its own level (owner 2026-11-22)
+  const jit = L === 0 ? (S.barShake || 0) * gap * 2.2 : 0;  // bar shake: live bands jitter with their own level
   for (let k = 0; k < N; k++) {
     let [x, y, nx, ny] = pts[k];
-    const h = len(v[k]) * (1 + (jit ? (Math.random() - 0.5) * 0.25 * S.barShake * v[k] : 0)), back = S.mirror ? h * 0.55 : 0;
-    if (jit) { const j = (Math.random() - 0.5) * jit * (0.3 + v[k] * 1.4) * (0.5 + energy); x -= ny * j; y += nx * j; }
-    if (S.style === "bars") {
-      ctx.strokeStyle = colour(k, N, v[k]); ctx.lineWidth = lw;
-      ctx.beginPath(); ctx.moveTo(x - nx * back, y - ny * back); ctx.lineTo(x + nx * h, y + ny * h); ctx.stroke();
-    } else if (S.style === "dots") {
-      ctx.fillStyle = colour(k, N, v[k]);
-      const r = Math.max(1.2 * scale, lw * (0.35 + 0.4 * v[k]));
-      ctx.beginPath(); ctx.arc(x + nx * h, y + ny * h, r, 0, TAU); ctx.fill();
-      ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.arc(x + nx * h * 0.5, y + ny * h * 0.5, r * 0.6, 0, TAU); ctx.fill();
-      if (S.mirror) { ctx.beginPath(); ctx.arc(x - nx * back, y - ny * back, r * 0.8, 0, TAU); ctx.fill(); }
-      ctx.globalAlpha = 1;
-    } else {  // blocks: LED segments, coloured by height
-      const seg = Math.max(3 * scale, lw * 0.8), step = seg * 1.55, segs = Math.floor(h / step), all = Math.max(1, Math.floor(maxLen / step));
-      ctx.lineWidth = lw; ctx.lineCap = "butt";
-      for (let j = 0; j <= segs; j++) {
-        ctx.strokeStyle = wrap((j / all) * 0.6 + flowPh + k / N);
-        const a = j * step, b = a + seg;
-        ctx.beginPath(); ctx.moveTo(x + nx * a, y + ny * a); ctx.lineTo(x + nx * b, y + ny * b); ctx.stroke();
-        if (S.mirror && a < back) { ctx.beginPath(); ctx.moveTo(x - nx * a, y - ny * a); ctx.lineTo(x - nx * b, y - ny * b); ctx.stroke(); }
-      }
+    const h = len(src[k]) * (1 + L * 0.06) * (1 + (jit ? (Math.random() - 0.5) * 0.25 * S.barShake * src[k] : 0));
+    if (jit) { const j = (Math.random() - 0.5) * jit * (0.3 + src[k] * 1.4) * (0.5 + energy); x -= ny * j; y += nx * j; }
+    band(k, N, x, y, nx, ny, h, src[k], f, lw, maxLen);
+  }
+}
+// One band in the chosen style; f = colour shade (1 live, ECHO_SHADE for echoes).
+function band(k, N, x, y, nx, ny, h, val, f, lw, maxLen) {
+  const back = S.mirror ? h * 0.55 : 0;
+  const col = (xx) => (f === 1 ? wrap(xx) : shade(xx, f));
+  const pos = (S.colorBy === "level" ? val : k / N) + flowPh + 0.07 * Math.sin((k / N) * TAU * 3 + flowPh * TAU * 2);
+  if (S.style === "bars") {
+    ctx.strokeStyle = col(pos); ctx.lineWidth = lw; ctx.lineCap = S.rounded ? "round" : "butt";
+    ctx.beginPath(); ctx.moveTo(x - nx * back, y - ny * back); ctx.lineTo(x + nx * h, y + ny * h); ctx.stroke();
+  } else if (S.style === "dots") {
+    ctx.fillStyle = col(pos);
+    const r = Math.max(1.2 * scale, lw * (0.35 + 0.4 * val));
+    ctx.beginPath(); ctx.arc(x + nx * h, y + ny * h, r, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.arc(x + nx * h * 0.5, y + ny * h * 0.5, r * 0.6, 0, TAU); ctx.fill();
+    if (S.mirror) { ctx.beginPath(); ctx.arc(x - nx * back, y - ny * back, r * 0.8, 0, TAU); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  } else {  // blocks: LED segments, coloured by height
+    const seg = Math.max(3 * scale, lw * 0.8), step = seg * 1.55, segs = Math.floor(h / step), all = Math.max(1, Math.floor(maxLen / step));
+    ctx.lineWidth = lw; ctx.lineCap = "butt";
+    for (let j = 0; j <= segs; j++) {
+      ctx.strokeStyle = col((j / all) * 0.6 + flowPh + k / N);
+      const a = j * step, b = a + seg;
+      ctx.beginPath(); ctx.moveTo(x + nx * a, y + ny * a); ctx.lineTo(x + nx * b, y + ny * b); ctx.stroke();
+      if (S.mirror && a < back) { ctx.beginPath(); ctx.moveTo(x - nx * a, y - ny * a); ctx.lineTo(x - nx * b, y - ny * b); ctx.stroke(); }
     }
   }
 }
@@ -352,7 +388,7 @@ function frame(now) {
   const v = values();
   hist.unshift({ t: now, v: Float32Array.from(v) });
   while (hist.length > 2 && now - hist[hist.length - 1].t > 1800) hist.pop();
-  gradCache = echoGradCache = null;
+  gradCache = {};
   rot += S.rotate * TAU * dt * (closed || S.shape === "spiral" ? 1 : 0);
   hue = (hue + S.hueDrift * 360 * dt) % 360;
   flowPh = (flowPh + S.flow * dt * (1 + energy * 2.2 + pulse * 1.5)) % 1;
