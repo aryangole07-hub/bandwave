@@ -1,6 +1,6 @@
 // Bandwave main process: the visualizer window (wallpaper / window / on top / full screen), the settings window,
 // the tray, global media shortcuts, and the Python helper (now playing + pinning behind the desktop icons).
-const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, globalShortcut, nativeImage, screen } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, globalShortcut, nativeImage, screen, net } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -9,6 +9,15 @@ const DEFAULTS = require("./defaults");
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const FILE = path.join(app.getPath("userData"), "settings.json");
+const PFILE = path.join(app.getPath("userData"), "profiles.json");  // owner's named looks: { name: settings }
+const readProfiles = () => { try { return JSON.parse(fs.readFileSync(PFILE, "utf8")); } catch { return {}; } };
+const writeProfiles = (p) => { fs.writeFileSync(PFILE, JSON.stringify(p, null, 2)); tray && tray.rebuild(); return p; };
+function loadProfile(name) {
+  const p = readProfiles()[name];
+  if (!p) return;
+  const { savedAt, ...look } = p;
+  set(look);
+}
 let S = { ...load(), ...(process.env.BW_SET ? JSON.parse(process.env.BW_SET) : {}) };  // BW_SET: test hook
 let viz, settingsWin, tray, helper, media = { type: "media", title: null };
 let fullscreen = false, saveTimer;
@@ -24,6 +33,38 @@ function broadcast(ch, v) {
   for (const w of [viz, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send(ch, v);
 }
 
+// Time-synced lyrics from LRCLIB (free, open, no key). Only the song's title/artist/album/length are sent.
+let lyricKey = null, lyrics = { key: null, lines: null };
+function parseLrc(text) {
+  const out = [];
+  for (const l of text.split(/\r?\n/)) {
+    const words = l.replace(/\[[^\]]*\]/g, "").trim();
+    for (const g of l.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)) out.push({ t: +g[1] * 60 + +g[2], text: words });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+async function fetchLyrics(m) {
+  const key = m.title ? `${m.title}|${m.artist}` : null;
+  if (key === lyricKey) return;
+  lyricKey = key; lyrics = { key, lines: null }; broadcast("lyrics", lyrics);
+  if (!key) return;
+  const headers = { "User-Agent": "Bandwave/0.1 (desktop music visualizer)" };
+  let lines = [];
+  try {
+    const q = new URLSearchParams({ track_name: m.title, artist_name: m.artist || "" });
+    if (m.album) q.set("album_name", m.album);
+    if (m.dur) q.set("duration", Math.round(m.dur));
+    let r = await net.fetch("https://lrclib.net/api/get?" + q, { headers }), j = r.ok ? await r.json() : null;
+    if (!j || !j.syncedLyrics) {  // exact match missed (album/length differ): best synced search hit
+      r = await net.fetch("https://lrclib.net/api/search?" + new URLSearchParams({ track_name: m.title, artist_name: m.artist || "" }), { headers });
+      const hits = r.ok ? await r.json() : [];
+      j = hits.find((h) => h.syncedLyrics && (!m.dur || Math.abs(h.duration - m.dur) < 8)) || hits.find((h) => h.syncedLyrics) || j;
+    }
+    if (j && j.syncedLyrics) lines = parseLrc(j.syncedLyrics);
+  } catch (e) { console.log("[lyrics]", e.message); }
+  if (lyricKey === key) { lyrics = { key, lines }; broadcast("lyrics", lyrics); }
+}
+
 function startHelper() {
   const py = path.join(__dirname, ".venv", "Scripts", "python.exe");
   helper = spawn(py, [path.join(__dirname, "helper", "media.py")], { windowsHide: true });
@@ -36,7 +77,8 @@ function startHelper() {
       try {
         const m = JSON.parse(line);
         if (m.type === "log") console.log("[helper]", m.msg);
-        if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); }
+        if (m.type === "pos") broadcast("pos", m);
+        if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); fetchLyrics(media); }
       } catch {}
     }
   });
@@ -75,7 +117,7 @@ function createViz() {
   });
   viz.setMenu(null);
   viz.loadFile("viz.html", process.env.BW_DEMO ? { query: { demo: "1" } } : undefined);
-  viz.webContents.once("did-finish-load", () => { viz.webContents.send("settings", S); viz.webContents.send("media", media); applyMode(); });
+  viz.webContents.once("did-finish-load", () => { viz.webContents.send("settings", S); viz.webContents.send("media", media); viz.webContents.send("lyrics", lyrics); applyMode(); });
   viz.on("closed", () => { viz = null; });
 }
 
@@ -100,6 +142,9 @@ function buildTray() {
   const menu = () => Menu.buildFromTemplate([
     { label: "Settings", click: openSettings },
     { label: "Full screen  (Ctrl+Alt+F)", click: () => setFullscreen(!fullscreen) },
+    { label: "Profiles", submenu: Object.keys(readProfiles()).length
+        ? Object.keys(readProfiles()).sort((a, b) => a.localeCompare(b)).map((n) => ({ label: n, click: () => loadProfile(n) }))
+        : [{ label: "No saved profiles yet", enabled: false }] },
     { type: "separator" },
     ...[["wallpaper", "On the wallpaper"], ["window", "In a window"], ["ontop", "Always on top"]].map(([v, label]) => ({
       label, type: "radio", checked: S.mode === v, click: () => set({ mode: v }),
@@ -124,7 +169,8 @@ function set(patch) {
 app.whenReady().then(() => {
   // System audio for the analyser: Chromium's own WASAPI loopback, granted without a picker.
   session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => {
-    desktopCapturer.getSources({ types: ["screen"] }).then((src) => cb({ video: src[0], audio: "loopback" }));
+    // thumbnailSize 0: no screen grab just to list sources (a 4K GDI grab stalls the cursor)
+    desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).then((src) => cb({ video: src[0], audio: "loopback" }));
   });
   startHelper();
   createViz();
@@ -135,7 +181,10 @@ app.whenReady().then(() => {
   globalShortcut.register("Control+Alt+Left", () => tell("prev"));
   if (!fs.existsSync(FILE)) openSettings();  // first run: show what it can do
   screen.on("display-metrics-changed", applyMode);
-  if (process.env.BW_SNAP) setTimeout(snap, 7000);  // test hook: save what each window shows, then quit
+  if (process.env.BW_SNAP) setTimeout(snap, 7000);
+  if (process.env.BW_PERF) setInterval(() => {  // test hook: CPU per Electron process
+    console.log("[perf]", app.getAppMetrics().map((m) => `${m.type}:${m.cpu.percentCPUUsage.toFixed(1)}%`).join(" "));
+  }, 3000);  // test hook: save what each window shows, then quit
 });
 
 async function snap() {
@@ -152,4 +201,18 @@ app.on("will-quit", () => { globalShortcut.unregisterAll(); if (viz) tell(`unwal
 ipcMain.on("set", (_e, patch) => set(patch));
 ipcMain.on("reset", () => set({ ...DEFAULTS, mode: S.mode, startup: S.startup }));
 ipcMain.on("media-cmd", (_e, cmd) => tell(cmd));
+ipcMain.handle("profiles", () => readProfiles());
+ipcMain.handle("profile-save", (_e, name) => {
+  const { startup, mode, ...look } = S;  // a profile is a look, not where/when the app runs
+  return writeProfiles({ ...readProfiles(), [name]: { ...look, savedAt: Date.now() } });
+});
+ipcMain.handle("profile-delete", (_e, name) => { const p = readProfiles(); delete p[name]; return writeProfiles(p); });
+ipcMain.on("profile-load", (_e, name) => loadProfile(name));
 ipcMain.on("fullscreen", (_e, on) => setFullscreen(on));
+// Esc in full screen: drop to a normal window (owner 2026-11-22)
+ipcMain.on("escape", () => { if (!fullscreen) return; fullscreen = false; if (S.mode !== "window") set({ mode: "window" }); else applyMode(); });
+// ` (backtick): settings on top of everything, including full screen; again to hide
+ipcMain.on("toggle-settings", () => {
+  if (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible() && settingsWin.isFocused()) { settingsWin.hide(); viz && viz.focus(); return; }
+  openSettings(); settingsWin.setAlwaysOnTop(true, "screen-saver"); settingsWin.show(); settingsWin.focus();
+});

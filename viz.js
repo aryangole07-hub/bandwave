@@ -11,7 +11,8 @@ let analyser = null, freq = null, sr = 48000;
 let bands = [], raw = new Float32Array(0), levels = new Float32Array(0), hist = [];
 let pts = [], closed = true, cx = 0, cy = 0, R = 1, gap = 4;
 let rot = 0, hue = 0, pulse = 0, bassAvg = 0.1, lastBeat = 0, particles = [], last = performance.now();
-let lut = [];
+let lutHue = null, lut = [], flowPh = 0, energy = 0, spinAng = 0, spinVel = 0, recGlow = '';
+let pos = { pos: 0, at: 0, playing: false }, lyr = { key: null, lines: [] }, lyrIdx = -2, lyrLit = -1, lyrEls = [];
 const DEMO = new URLSearchParams(location.search).has("demo");                           // 256 palette colours
 
 // ---------- palette ----------
@@ -53,17 +54,23 @@ function buildLut() {
   if (S.theme === "cover" && coverStops) stops = coverStops;
   else if (S.theme === "custom") { const [h, s] = rgb2hsl(hex(S.custom)); stops = [-0.09, 0, 0.09].map((o) => hsl2rgb((h + o + 1) % 1, Math.max(s, 0.7), 0.62)); }
   else stops = (THEMES[S.theme] || THEMES.nebula).map(hex);
+  lutHue = hue;
+  if (S.hueDrift) stops = stops.map((c) => { const [h, s, l] = rgb2hsl(c); return hsl2rgb((h + hue / 360) % 1, s, l); });
   lut = [];
+  const cyc = [...stops, stops[0]];  // a -> b -> c -> a: no seam when the colours travel round
   for (let i = 0; i < 256; i++) {
-    const x = (i / 255) * 2, j = Math.min(1, Math.floor(x)), f = x - j, a = stops[j], b = stops[j + 1];
+    const x = (i / 256) * 3, j = Math.floor(x), f = x - j, a = cyc[j], b = cyc[j + 1];
     lut.push(`rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`);
   }
+  recGlow = lut[0].replace("rgb", "rgba").replace(")", ",.38)");
   if (S.background === "gradient") {
     const c = stops.map((s) => `rgb(${s.map((v) => Math.round(v * 0.35)).join(",")})`);
     $("bg").style.backgroundImage = `radial-gradient(circle at 30% 30%, ${c[0]}, transparent 60%), radial-gradient(circle at 75% 70%, ${c[2]}, transparent 55%), radial-gradient(circle, ${c[1]}, #05050a 80%)`;
   }
 }
-const colour = (k, n, v) => lut[Math.round(255 * clamp(S.colorBy === "level" ? v : k / Math.max(1, n - 1), 0, 1))];
+// Colour travels along the shape (flowPh) with a slow ripple on top, so the gradient swirls rather than slides.
+const wrap = (x) => lut[(Math.floor((x - Math.floor(x)) * 256)) & 255];
+const colour = (k, n, v) => wrap((S.colorBy === "level" ? v : k / n) + flowPh + 0.07 * Math.sin((k / n) * TAU * 3 + flowPh * TAU * 2));
 
 // ---------- bands ----------
 const SCALES = {
@@ -116,6 +123,8 @@ function analyse(dt) {
   const now = performance.now();
   if (bass > bassAvg * 1.3 + 0.04 && bass > 0.3 && now - lastBeat > 170) { lastBeat = now; pulse = 1; burst(); }
   bassAvg += (bass - bassAvg) * Math.min(1, dt * 2.5);
+  let all = 0; for (let i = 0; i < n; i++) all += levels[i];
+  energy += ((n ? all / n : 0) * 1.6 - energy) * Math.min(1, dt * 4);
   pulse *= Math.pow(0.02, dt);
 }
 
@@ -186,11 +195,11 @@ function smooth(c, P, isClosed) {
 function strokeGradient() {
   if (closed && ctx.createConicGradient) {
     const g = ctx.createConicGradient(-Math.PI / 2, cx, cy);
-    for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, lut[Math.round(255 * (i <= 4 ? i / 4 : (8 - i) / 4))]);
+    for (let i = 0; i <= 12; i++) g.addColorStop(i / 12, wrap(i / 12 + flowPh));
     return g;
   }
   const g = ctx.createLinearGradient(pts[0][0], 0, pts[pts.length - 1][0] || W, 0);
-  for (let i = 0; i <= 4; i++) g.addColorStop(i / 4, lut[Math.round((255 * i) / 4)]);
+  for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, wrap(i / 8 + flowPh));
   return g;
 }
 function draw(v) {
@@ -216,8 +225,11 @@ function draw(v) {
     ctx.globalAlpha = 1;
     return;
   }
+  const jit = (S.barShake || 0) * gap * 2.2;  // bar shake: each band jitters with its own level (owner 2026-11-22)
   for (let k = 0; k < N; k++) {
-    const [x, y, nx, ny] = pts[k], h = len(v[k]), back = S.mirror ? h * 0.55 : 0;
+    let [x, y, nx, ny] = pts[k];
+    const h = len(v[k]) * (1 + (jit ? (Math.random() - 0.5) * 0.25 * S.barShake * v[k] : 0)), back = S.mirror ? h * 0.55 : 0;
+    if (jit) { const j = (Math.random() - 0.5) * jit * (0.3 + v[k] * 1.4) * (0.5 + energy); x -= ny * j; y += nx * j; }
     if (S.style === "bars") {
       ctx.strokeStyle = colour(k, N, v[k]); ctx.lineWidth = lw;
       ctx.beginPath(); ctx.moveTo(x - nx * back, y - ny * back); ctx.lineTo(x + nx * h, y + ny * h); ctx.stroke();
@@ -232,7 +244,7 @@ function draw(v) {
       const seg = Math.max(3 * scale, lw * 0.8), step = seg * 1.55, segs = Math.floor(h / step), all = Math.max(1, Math.floor(maxLen / step));
       ctx.lineWidth = lw; ctx.lineCap = "butt";
       for (let j = 0; j <= segs; j++) {
-        ctx.strokeStyle = lut[Math.round(255 * clamp(j / all, 0, 1))];
+        ctx.strokeStyle = wrap((j / all) * 0.6 + flowPh + k / N);
         const a = j * step, b = a + seg;
         ctx.beginPath(); ctx.moveTo(x + nx * a, y + ny * a); ctx.lineTo(x + nx * b, y + ny * b); ctx.stroke();
         if (S.mirror && a < back) { ctx.beginPath(); ctx.moveTo(x - nx * a, y - ny * a); ctx.lineTo(x - nx * b, y - ny * b); ctx.stroke(); }
@@ -263,12 +275,14 @@ function drawParticles(dt) {
 function frame(now) {
   requestAnimationFrame(frame);
   if (!S || !pts.length) return;
+  if (now - last < 1000 / (S.fps || 60) - 2) return;  // 120/144 Hz screens: don't draw more than the cap
   const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
   analyse(dt);
   const v = values();
   hist.unshift(Float32Array.from(v)); if (hist.length > 26) hist.pop();
   rot += S.rotate * TAU * dt * (closed || S.shape === "spiral" ? 1 : 0);
   hue = (hue + S.hueDrift * 360 * dt) % 360;
+  flowPh = (flowPh + S.flow * dt * (1 + energy * 2.2 + pulse * 1.5)) % 1;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (S.trails > 0) { ctx.globalCompositeOperation = "destination-out"; ctx.fillStyle = `rgba(0,0,0,${1 - S.trails * 0.9})`; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }
@@ -282,13 +296,81 @@ function frame(now) {
   gctx.clearRect(0, 0, gl.width, gl.height);
   if (S.glow > 0) { gctx.filter = `blur(${3 + 7 * S.glow}px)`; gctx.drawImage(cv, 0, 0, gl.width, gl.height); }
   gl.style.opacity = S.glow * (0.75 + 0.5 * pulse);
-  $("stage").style.filter = S.hueDrift ? `hue-rotate(${hue.toFixed(1)}deg)` : "";
-  $("bg").style.transform = `scale(${1 + pulse * S.beatPulse * 0.025})`;
-  const disc = $("disc");
-  if (disc.classList.contains("on")) {
-    const d = (R * 2 * 0.72) / scale;
-    Object.assign(disc.style, { width: d + "px", height: d + "px", left: cx / scale - d / 2 + "px", top: cy / scale - d / 2 + "px", transform: `scale(${1 + pulse * S.beatPulse * 0.07})` });
+  if (S.hueDrift && (lutHue === null || Math.abs(hue - lutHue) > 2)) buildLut();
+  record(dt);
+  lyricsFrame();
+}
+
+// ---------- record + lyrics ----------
+function ringText() {
+  const unit = `${media.title}${media.artist ? "  •  " + media.artist : ""}  •  `;
+  return unit.repeat(Math.max(1, Math.round(64 / unit.length)));  // fill the groove; textLength spreads it evenly
+}
+function record(dt) {
+  const el = $("rec");
+  if (!el.classList.contains("on")) return;
+  const open = !closed, d = (open ? Math.min(W, H) * 0.34 : R * 2 * 0.72) / scale;
+  const x = (open ? W / 2 : cx) / scale, y = (open ? H * 0.4 : cy) / scale;
+  const target = media.playing ? S.spin * (1 + energy * 0.6) : 0;  // vinyl-style spin up / wind down
+  spinVel += (target - spinVel) * Math.min(1, dt * 1.6);
+  spinAng = (spinAng + spinVel * 360 * dt) % 360;
+  Object.assign(el.style, { width: d + "px", height: d + "px", left: x - d / 2 + "px", top: y - d / 2 + "px", transform: `scale(${1 + pulse * S.beatPulse * 0.05})` });
+  el.style.setProperty("--recGlow", recGlow);
+  $("spin").style.transform = `rotate(${spinAng}deg)`;
+  $("track").style.setProperty("--fs", d * 0.062 + "px");
+}
+const norm = (t) => t.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+function buildLyrics() {
+  const lines = lyr.lines || [], seen = {};
+  for (const l of lines) if (l.text) seen[norm(l.text)] = (seen[norm(l.text)] || 0) + 1;
+  const track = $("track");
+  track.textContent = "";
+  lyrEls = lines.map((l) => {
+    const el = document.createElement("div"), t = l.text, words = t ? t.split(/\s+/) : ["•", "•", "•"];
+    const letters = t.replace(/[^A-Za-z]/g, ""), caps = letters.length > 3 && letters === letters.toUpperCase();
+    // the line's own character picks its type: chorus (repeated) caps, shouted italic, (backing vocals) serif, short big, long smaller
+    el.className = "ln" + (!t ? " gap" : "") + (t && seen[norm(t)] > 1 ? " chorus" : "") + (/!/.test(t) || caps ? " loud" : "")
+      + (/^\(.*\)$/.test(t) ? " soft" : "") + (t && words.length <= 3 ? " big" : "") + (words.length > 9 ? " long" : "");
+    words.forEach((w, i) => { const sp = document.createElement("span"); sp.className = "w"; sp.style.setProperty("--i", i); sp.textContent = w + (i < words.length - 1 ? " " : ""); el.append(sp); });
+    track.append(el);
+    return el;
+  });
+  lyrIdx = -2; lyrLit = -1;
+}
+function songTime() { return pos.pos + (pos.playing ? (Date.now() - pos.at) / 1000 : 0) + (S.lyricsOffset || 0); }
+function lyricsFrame() {
+  const rec = $("rec"), lines = lyr.lines || [];
+  const show = S.lyrics && lines.length > 0 && rec.classList.contains("on");
+  rec.classList.toggle("lyr", show);
+  if (!show) return;
+  const t = songTime();
+  let i = -1;
+  while (i + 1 < lines.length && lines[i + 1].t <= t) i++;
+  if (i !== lyrIdx) {
+    lyrIdx = i; lyrLit = -1;
+    lyrEls.forEach((el, k) => { const d = Math.abs(k - i); el.classList.toggle("cur", d === 0); el.classList.toggle("d1", d === 1); el.classList.toggle("d2", d === 2); });
+    const cur = lyrEls[Math.max(0, i)], box = $("lyr");
+    if (cur) {
+      $("track").style.transform = `translateY(${box.clientHeight / 2 - cur.offsetTop - cur.offsetHeight / 2}px)`;
+      cur.querySelectorAll(".w").forEach((w) => { w.style.animation = "none"; void w.offsetWidth; w.style.animation = ""; });  // replay the word entrance
+    }
   }
+  const cur = lyrEls[i];
+  if (cur && lines[i].text) {
+    // light the words up through the line, weighted by length, so the highlight follows the singing
+    const end = lines[i + 1] ? lines[i + 1].t : lines[i].t + 4, p = clamp((t - lines[i].t) / Math.max(0.3, (end - lines[i].t) * 0.85), 0, 1);
+    const words = cur.children, total = lines[i].text.length;
+    let acc = 0, lit = 0;
+    for (const w of words) { acc += w.textContent.length; if (acc / total <= p + 0.02) lit++; }
+    if (lit !== lyrLit) { lyrLit = lit; [...words].forEach((w, k) => w.classList.toggle("lit", k < lit)); }
+  }
+  // the font follows the music: louder = heavier and more condensed; beats kick the scale
+  const e = clamp(energy, 0, 1), box = $("track");
+  box.style.setProperty("--wght", Math.round(330 + 370 * e));
+  box.style.setProperty("--wdth", Math.round(100 - 25 * e));
+  box.style.setProperty("--ls", (0.02 - 0.03 * e).toFixed(3) + "em");
+  box.style.setProperty("--beat", pulse.toFixed(3));
+  box.style.setProperty("--litGlow", recGlow.replace(",.38)", ",.95)"));
 }
 
 // ---------- scene ----------
@@ -303,7 +385,8 @@ function scene() {
   bg.style.opacity = S.background === "black" ? 0 : 1;
   if (S.background === "cover") bg.style.backgroundImage = media.cover ? `url("${media.cover}")` : "radial-gradient(circle, #1b1430, #05050a 75%)";
   bg.style.filter = S.background === "cover" ? `blur(80px) saturate(1.6) brightness(${1 - S.bgDim})` : `brightness(${1.2 - S.bgDim})`;
-  $("disc").classList.toggle("on", !!(S.coverCenter && closed && media.cover));
+  $("rec").classList.toggle("on", !!S.coverCenter && !!media.title);
+  $("ringText").textContent = media.title ? ringText() : "";
   $("card").className = `${S.card} ${S.card !== "hidden" && media.title ? "on" : ""}`;
   $("clock").classList.toggle("on", !!S.clock);
   document.body.classList.toggle("drag", !fullscreen && S.mode !== "wallpaper");
@@ -327,17 +410,20 @@ window.bw.onMedia((m) => {
   $("title").textContent = m.title || ""; $("artist").textContent = m.artist || "";
   $("ppIcon").setAttribute("d", m.playing ? "M6 5h4v14H6zM14 5h4v14h-4z" : "M7 5v14l12-7z");
   if (m.cover) {
-    $("cover").src = $("disc").src = m.cover;
+    $("cover").src = $("label").src = m.cover;
     const img = new Image(); img.onload = () => { coverPalette(img); S && buildLut(); }; img.src = m.cover;
   }
   if (S) scene();
 });
+window.bw.onPos((p) => { pos = p; });
+window.bw.onLyrics((l) => { lyr = { key: l.key, lines: l.lines || [] }; buildLyrics(); });
 window.bw.onFullscreen((on) => { fullscreen = on; document.body.classList.toggle("fs", on); if (S) scene(); });
 $("prev").onclick = () => window.bw.media("prev");
 $("next").onclick = () => window.bw.media("next");
 $("pp").onclick = () => window.bw.media("play_pause");
 addEventListener("keydown", (e) => {
-  if (e.key === "Escape") window.bw.fullscreen(false);
+  if (e.key === "Escape") window.bw.escape();
+  else if (e.key === "`") window.bw.toggleSettings();
   else if (e.key === " ") window.bw.media("play_pause");
   else if (e.key === "ArrowRight") window.bw.media("next");
   else if (e.key === "ArrowLeft") window.bw.media("prev");
@@ -347,7 +433,7 @@ setInterval(tick, 1000);
 
 async function startAudio() {
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: 1, height: 1, frameRate: 1 }, audio: true });
     stream.getVideoTracks().forEach((t) => t.stop());  // only the sound is needed
     const ac = new AudioContext();
     analyser = ac.createAnalyser(); analyser.fftSize = 16384; analyser.smoothingTimeConstant = 0; analyser.minDecibels = -120; analyser.maxDecibels = 0;

@@ -35,6 +35,7 @@ const SCHEMA = [
     ["theme", "Theme", "seg", ["nebula", "sunset", "ocean", "neon", "fire", "ice", "cover", "custom"]],
     ["custom", "Custom colour", "color", (s) => s.theme === "custom"],
     ["colorBy", "Colour by", "seg", ["position", "level"]],
+    ["flow", "Colour flow", "range", 0, 0.6, 0.01, (v) => (v ? v.toFixed(2) + " /s" : "off")],
     ["hueDrift", "Hue drift", "range", 0, 0.2, 0.005, (v) => (v ? v.toFixed(3) : "off")],
   ]],
   ["Motion", [
@@ -44,6 +45,7 @@ const SCHEMA = [
     ["decay", "Fall speed", "range", 0.02, 0.6, 0.01, pct],
     ["beatPulse", "Beat pulse", "range", 0, 1.5, 0.05, pct],
     ["shake", "Beat shake", "range", 0, 1, 0.05, pct],
+    ["barShake", "Bar shake", "range", 0, 1, 0.05, (v) => (v ? pct(v) : "off"), null, "Each band trembles with its own loudness."],
     ["glow", "Glow", "range", 0, 1.5, 0.05, pct],
     ["trails", "Trails", "range", 0, 0.95, 0.01, pct],
     ["particles", "Beat particles", "toggle"],
@@ -52,11 +54,15 @@ const SCHEMA = [
     ["mode", "Show", "seg", ["wallpaper", "window", "ontop"]],
     ["background", "Background", "seg", ["cover", "gradient", "black"]],
     ["bgDim", "Darken background", "range", 0, 0.95, 0.01, pct],
-    ["coverCenter", "Album art in centre", "toggle"],
+    ["coverCenter", "Spinning record", "toggle"],
+    ["spin", "Record speed", "range", 0, 0.6, 0.01, (v) => (v ? v.toFixed(2) + " /s" : "still"), (s) => s.coverCenter],
+    ["lyrics", "Lyrics in the record", "toggle", (s) => s.coverCenter],
+    ["lyricsOffset", "Lyrics timing", "range", -2, 2, 0.1, (v) => (v > 0 ? "+" : "") + v.toFixed(1) + " s", (s) => s.coverCenter && s.lyrics, "If the words run late, move right; early, move left."],
     ["card", "Now playing card", "seg", ["bottom-left", "bottom-center", "top-left", "hidden"]],
     ["clock", "Clock", "toggle"],
     ["clock24", "24-hour clock", "toggle", (s) => s.clock],
-    ["renderScale", "Render quality", "range", 0.4, 1, 0.05, pct, null, "Lower = lighter on the GPU. 75% looks the same on a 4K screen."],
+    ["renderScale", "Render quality", "range", 0.35, 1, 0.05, pct, null, "Lower = lighter on the PC. 50% is a 1080p canvas; glow hides the difference on 4K."],
+    ["fps", "Frame rate cap", "seg", [30, 60]],
     ["startup", "Start with Windows", "toggle"],
   ]],
 ];
@@ -70,16 +76,50 @@ const PRESETS = {
   "Galaxy spiral": { shape: "spiral", style: "dots", bands: 200, symmetric: false, theme: "ice", glow: 1.1, trails: 0.85, rotate: 0.06, size: 0.4, length: 0.1, particles: true },
 };
 
+// ---------- profiles: save the current look under a name, search yours + the presets, click to load ----------
+let profiles = {};
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 1800); }
+function renderProfiles() {
+  const q = $("psearch").value.trim().toLowerCase(), list = $("plist");
+  const mine = Object.entries(profiles).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0)).map(([n]) => [n, true]);
+  const items = [...mine, ...Object.keys(PRESETS).map((n) => [n, false])].filter(([n]) => n.toLowerCase().includes(q));
+  list.textContent = "";
+  if (!items.length) { list.innerHTML = `<div class="empty">No profile matches “${q.replace(/</g, "&lt;")}”.</div>`; return; }
+  for (const [name, isMine] of items) {
+    const b = document.createElement("button"); b.className = "chip" + (isMine ? " mine" : "");
+    b.append(name);
+    if (isMine) {
+      const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.title = `Delete ${name}`; x.setAttribute("aria-label", `Delete ${name}`);
+      x.onclick = async (e) => { e.stopPropagation(); profiles = await window.bw.deleteProfile(name); renderProfiles(); toast(`Deleted “${name}”`); };
+      b.append(x);
+    } else { const s = document.createElement("small"); s.textContent = "preset"; b.append(s); }
+    b.onclick = () => { isMine ? window.bw.loadProfile(name) : window.bw.set(PRESETS[name]); toast(`Loaded “${name}”`); };
+    list.append(b);
+  }
+}
+async function saveProfile() {
+  const name = $("pname").value.trim().slice(0, 40);
+  if (!name) { $("pname").focus(); return; }
+  const existed = name in profiles;
+  profiles = await window.bw.saveProfile(name);
+  $("pname").value = ""; $("psearch").value = ""; renderProfiles();
+  toast(existed ? `Updated “${name}”` : `Saved “${name}”`);
+}
+
 const rows = [];
 function build() {
   const main = $("main");
-  const pre = document.createElement("div"); pre.className = "presets";
-  for (const [name, p] of Object.entries(PRESETS)) {
-    const b = document.createElement("button"); b.className = "preset"; b.textContent = name;
-    b.onclick = () => window.bw.set(p);
-    pre.append(b);
-  }
-  main.append(pre);
+  const pro = document.createElement("div"); pro.className = "profiles";
+  pro.innerHTML = `<div class="pbar">
+      <input id="pname" type="text" maxlength="40" placeholder="Name this look, e.g. Late night purple" aria-label="Profile name" spellcheck="false">
+      <button class="primary" id="psave">Save profile</button>
+      <input id="psearch" type="search" placeholder="Search profiles and presets" aria-label="Search profiles">
+    </div><div class="chips" id="plist"></div>`;
+  main.append(pro);
+  $("psave").onclick = saveProfile;
+  $("pname").onkeydown = (e) => { if (e.key === "Enter") saveProfile(); };
+  $("psearch").oninput = renderProfiles;
+  window.bw.profiles().then((p) => { profiles = p; renderProfiles(); });
   for (const [title, items] of SCHEMA) {
     const sec = document.createElement("section");
     sec.innerHTML = `<h2>${title}</h2>`;
@@ -91,7 +131,7 @@ function build() {
       if (kind === "seg") {
         input = document.createElement("div"); input.className = "seg"; input.id = id;
         for (const o of a[0]) {
-          const b = document.createElement("button"); b.textContent = o.replace("-", " "); b.dataset.v = o;
+          const b = document.createElement("button"); b.textContent = String(o).replace("-", " "); b.dataset.v = o;
           b.onclick = () => window.bw.set({ [key]: o });
           input.append(b);
         }
@@ -133,13 +173,13 @@ function build() {
     main.append(sec);
   }
   const f = document.createElement("footer");
-  f.innerHTML = "Shortcuts: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> full screen · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> play / pause · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd> skip. Bandwave lives in the tray; closing this window keeps the visualizer running.";
+  f.innerHTML = "Shortcuts: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> full screen · <kbd>Esc</kbd> full screen to window · <kbd>`</kbd> settings on top · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> play / pause · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd> skip. Bandwave lives in the tray; closing this window keeps the visualizer running.";
   main.append(f);
 }
 function render() {
   for (const r of rows) {
     const v = S[r.key];
-    if (r.kind === "seg") for (const b of r.input.children) b.classList.toggle("on", b.dataset.v === v);
+    if (r.kind === "seg") for (const b of r.input.children) b.classList.toggle("on", b.dataset.v === String(v));
     else if (r.kind === "toggle") r.input.firstChild.checked = !!v;
     else if (document.activeElement !== r.input) r.input.value = v;
     if (r.kind === "range") r.val.textContent = r.fmt ? r.fmt(+v) : v;
@@ -156,4 +196,5 @@ window.bw.onMedia((m) => {
   if (m.cover) { $("ncov").src = m.cover; $("ncov").hidden = false; }
 });
 $("fs").onclick = () => window.bw.fullscreen(true);
+addEventListener("keydown", (e) => { if (e.key === "`" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); window.bw.toggleSettings(); } });
 $("reset").onclick = () => window.bw.reset();

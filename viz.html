@@ -9,16 +9,54 @@
     font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; color: #fff; }
   body.drag { -webkit-app-region: drag; }
   body.drag button { -webkit-app-region: no-drag; }
-  #bg { position: absolute; inset: -8%; background-size: cover; background-position: center; transition: opacity 900ms ease-out; will-change: transform; }
-  #stage { position: absolute; inset: 0; will-change: filter; }
+  #bg { position: absolute; inset: -8%; background-size: cover; background-position: center; transition: opacity 900ms ease-out; }
+  #stage { position: absolute; inset: 0; }
   #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #glow { mix-blend-mode: screen; }
-  #disc { position: absolute; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 700ms ease-out;
-    box-shadow: 0 0 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08); will-change: transform; pointer-events: none; }
-  #disc.on { opacity: 1; }
+  /* Spinning record: vinyl grooves + album-art label + song name around the groove; lyrics float on top (not spinning). */
+  #rec { position: absolute; border-radius: 50%; opacity: 0; transition: opacity 700ms ease-out; pointer-events: none; will-change: transform; }
+  #rec.on { opacity: 1; }
+  #spin { position: absolute; inset: 0; border-radius: 50%; will-change: transform; }
+  .vinyl { position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle, transparent 0 31%, rgba(0,0,0,.6) 31.5%, transparent 33%),
+      repeating-radial-gradient(circle, #09090b 0 1px, #17171b 1.4px 2.3px, #0c0c0f 2.6px 3.2px), #0b0b0e;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 30px 90px rgba(0,0,0,.7), 0 0 70px var(--recGlow, rgba(124,92,255,.35)); }
+  #label { position: absolute; left: 50%; top: 50%; width: 38%; height: 38%; translate: -50% -50%; border-radius: 50%; object-fit: cover;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.6); transition: filter 900ms cubic-bezier(.2,.8,.2,1); }
+  #rec.lyr #label { filter: blur(4px) brightness(.4) saturate(1.3); }
+  .hole { position: absolute; left: 50%; top: 50%; width: 3%; height: 3%; translate: -50% -50%; border-radius: 50%; background: #050506; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+  #ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  #ring text { fill: rgba(255,255,255,.82); font: 600 4.3px "Bahnschrift", "Segoe UI", sans-serif; letter-spacing: .6px; text-transform: uppercase; }
+  .sheen { position: absolute; inset: 0; border-radius: 50%; mix-blend-mode: screen; pointer-events: none;
+    background: conic-gradient(from 25deg, transparent 0 8%, rgba(255,255,255,.13) 13%, transparent 20% 52%, rgba(255,255,255,.09) 60%, transparent 68%); }
+
+  #lyr { position: absolute; left: 50%; top: 50%; width: 80%; height: 80%; translate: -50% -50%; border-radius: 50%; overflow: hidden;
+    -webkit-mask-image: radial-gradient(circle, #000 52%, transparent 71%); opacity: 0; transition: opacity 600ms ease-out;
+    background: radial-gradient(circle, rgba(0,0,0,.5) 0 38%, transparent 70%); }
+  #rec.lyr #lyr { opacity: 1; }
+  #track { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: .55em;
+    transition: transform 820ms cubic-bezier(.18,.9,.22,1.06); font-size: var(--fs, 20px); }
+  .ln { max-width: 74%; text-align: center; line-height: 1.12; color: #fff; opacity: 0; filter: blur(6px); transform: scale(.78);
+    transition: opacity 700ms cubic-bezier(.2,.8,.2,1), filter 700ms cubic-bezier(.2,.8,.2,1), transform 820ms cubic-bezier(.2,1.25,.4,1);
+    font-family: "Bahnschrift", "Segoe UI Variable Display", sans-serif; font-variation-settings: "wght" 420, "wdth" 100; text-wrap: balance; }
+  .ln.d1 { opacity: .42; filter: blur(1.4px); transform: scale(.8); }
+  .ln.d2 { opacity: .14; filter: blur(3px); transform: scale(.72); }
+  .ln.cur { opacity: 1; filter: none; transform: scale(calc(1 + var(--beat, 0) * .07));
+    font-variation-settings: "wght" var(--wght, 520), "wdth" var(--wdth, 100); letter-spacing: var(--ls, 0); }
+  .ln.chorus { text-transform: uppercase; letter-spacing: .03em; }
+  .ln.loud { font-style: italic; }
+  .ln.soft { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-variation-settings: normal; }
+  .ln.big { font-size: 1.28em; } .ln.long { font-size: .84em; }
+  .ln.gap { font-size: 1.4em; letter-spacing: .3em; }
+  .w { display: inline-block; white-space: pre; opacity: .38; transition: opacity 260ms ease-out, text-shadow 420ms ease-out, transform 420ms cubic-bezier(.3,1.6,.5,1); }
+  .cur .w { animation: wIn 640ms cubic-bezier(.2,1.2,.35,1) both; animation-delay: calc(var(--i) * 38ms); }
+  .w.lit { opacity: 1; text-shadow: 0 0 .5em var(--litGlow, rgba(180,150,255,.85)); transform: translateY(-.04em); }
+  @keyframes wIn { from { opacity: 0; transform: translateY(.45em) scale(.85); filter: blur(8px); } }
+  .gap .w { animation: breathe 1.6s ease-in-out infinite; animation-delay: calc(var(--i) * 200ms); opacity: .7; }
+  @keyframes breathe { 50% { opacity: .2; transform: scale(.8); } }
 
   #card { position: absolute; display: flex; align-items: center; gap: 18px; padding: 14px 22px 14px 14px; border-radius: 22px;
-    background: rgba(12, 12, 18, .38); backdrop-filter: blur(22px) saturate(1.4); box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset;
+    background: rgba(12, 12, 18, .38); backdrop-filter: blur(12px); box-shadow: 0 0 0 1px rgba(255,255,255,.07) inset;
     opacity: 0; transform: translateY(12px); transition: opacity 600ms cubic-bezier(.2,.8,.2,1), transform 600ms cubic-bezier(.2,.8,.2,1); max-width: 40vw; }
   #card.on { opacity: 1; transform: none; }
   #card.bottom-left { left: 3.2vw; bottom: 5.5vh; }
@@ -52,7 +90,17 @@
 <body>
   <div id="bg"></div>
   <div id="stage"><canvas id="viz"></canvas><canvas id="glow"></canvas></div>
-  <img id="disc" alt="">
+  <div id="rec">
+    <div id="spin">
+      <div class="vinyl"></div>
+      <img id="label" alt="">
+      <div class="hole"></div>
+      <svg id="ring" viewBox="0 0 100 100"><defs><path id="circ" d="M50,50 m-42,0 a42,42 0 1,1 84,0 a42,42 0 1,1 -84,0"/></defs>
+        <text><textPath id="ringText" href="#circ" textLength="263.9" lengthAdjust="spacing"></textPath></text></svg>
+    </div>
+    <div class="sheen"></div>
+    <div id="lyr"><div id="track"></div></div>
+  </div>
   <div id="card">
     <img id="cover" alt="">
     <div class="meta">
@@ -66,7 +114,7 @@
     </div>
   </div>
   <div id="clock"><div class="h" id="clockH"></div><div class="d" id="clockD"></div></div>
-  <div id="hint">Space play / pause · ← → skip · Esc exit</div>
+  <div id="hint">Space play / pause · ← → skip · ` settings · Esc window</div>
   <script src="viz.js"></script>
 </body>
 </html>

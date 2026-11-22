@@ -117,8 +117,12 @@ async def main():
                 msg = {"type": "media", "title": None}
             else:
                 p = await s.try_get_media_properties_async()
+                tl = s.get_timeline_properties()
+                playing = s.get_playback_info().playback_status == 4
                 msg = {"type": "media", "title": p.title, "artist": p.artist, "album": p.album_title,
-                       "playing": s.get_playback_info().playback_status == 4, "app": s.source_app_user_model_id}
+                       "playing": playing, "app": s.source_app_user_model_id, "dur": tl.end_time.total_seconds()}
+                # position as of last_updated_time (Spotify refreshes it every few s); the app extrapolates in between
+                out({"type": "pos", "pos": tl.position.total_seconds(), "at": tl.last_updated_time.timestamp() * 1000, "playing": playing})
             key = (msg.get("title"), msg.get("artist"), msg.get("playing"))
             if key != last:
                 if s is not None and (last is None or key[:2] != last[:2]):

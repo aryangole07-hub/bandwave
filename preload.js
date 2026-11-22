@@ -8,5 +8,12 @@ contextBridge.exposeInMainWorld("bw", {
   reset: () => ipcRenderer.send("reset"),
   media: (cmd) => ipcRenderer.send("media-cmd", cmd),
   fullscreen: (on) => ipcRenderer.send("fullscreen", on),
-  ready: () => ipcRenderer.send("ready"),
+  onPos: (fn) => ipcRenderer.on("pos", (_e, p) => fn(p)),
+  onLyrics: (fn) => ipcRenderer.on("lyrics", (_e, l) => fn(l)),
+  escape: () => ipcRenderer.send("escape"),
+  profiles: () => ipcRenderer.invoke("profiles"),
+  saveProfile: (name) => ipcRenderer.invoke("profile-save", name),
+  deleteProfile: (name) => ipcRenderer.invoke("profile-delete", name),
+  loadProfile: (name) => ipcRenderer.send("profile-load", name),
+  toggleSettings: () => ipcRenderer.send("toggle-settings"),
 });

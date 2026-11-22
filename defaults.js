@@ -30,6 +30,7 @@ const DEFAULTS = {
   custom: "#7c5cff",
   colorBy: "position",      // position | level
   hueDrift: 0.02,           // hue turns per second
+  flow: 0.12,               // colour cycles per second travelling along the shape (speeds up with the music)
 
   // Motion
   sensitivity: 1.0,
@@ -38,13 +39,18 @@ const DEFAULTS = {
   glow: 0.75, trails: 0.5,
   particles: true,
   beatPulse: 0.7, shake: 0.25,
+  barShake: 0,              // bands jitter with their own loudness (0 = off)
 
   // Scene
   background: "cover",      // cover | gradient | black
   bgDim: 0.6,
-  coverCenter: true,
+  coverCenter: true,        // spinning record in the centre (album art label, song name around the groove)
+  spin: 0.12,               // record turns per second while playing
+  lyrics: true,             // time-synced lyrics inside the record (LRCLIB)
+  lyricsOffset: 0,          // seconds; + shows lines earlier
   card: "bottom-left",      // bottom-left | bottom-center | top-left | hidden
   clock: true, clock24: false,
-  renderScale: 0.75,        // drawing resolution vs the screen (1 = full 4K, heavier)
+  renderScale: 0.5,         // drawing resolution vs the screen (1 = full 4K, much heavier; 0.5 = 1080p canvas)
+  fps: 60,                  // frame cap
 };
 if (typeof module !== "undefined") module.exports = DEFAULTS;
