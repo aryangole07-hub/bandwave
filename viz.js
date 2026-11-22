@@ -522,8 +522,8 @@ function keyGuide() {
   // On the wallpaper Bandwave can't take key presses, so it lists the Ctrl+Alt shortcuts that work from anywhere.
   const wall = S.mode === "wallpaper" && !fullscreen;
   const rows = wall
-    ? [["Ctrl Alt B", "Browse Spotify"], ["Ctrl Alt Space", "Play / pause"], ["Ctrl Alt ← →", "Previous / next"], ["Ctrl Alt F", "Full screen"]]
-    : [["Tab", "Browse Spotify"], ["Space", "Play / pause"], ["← →", "Previous / next"], ["`", "Settings"], ["Esc", fullscreen ? "Exit full screen" : "—"], ["Ctrl Alt F", "Full screen"]];
+    ? [["Ctrl Alt B", "Browse Spotify"], ["Ctrl Alt Space", "Play / pause"], ["Ctrl Alt ← →", "Previous / next"], ["Tray", "Full screen"]]
+    : [["Tab", "Browse Spotify"], ["Space", "Play / pause"], ["← →", "Previous / next"], ["`", "Settings"], ["F", fullscreen ? "Exit full screen" : "Full screen"], ["Esc", fullscreen ? "Exit full screen" : "—"]];
   const el = $("keys");
   el.classList.toggle("off", !S.keyGuide);
   el.innerHTML = rows.filter((r) => r[1] !== "—").map(([k, t]) => `<kbd>${k}</kbd><span>${t}</span>`).join("");
@@ -595,6 +595,7 @@ addEventListener("keydown", (e) => {
   if (e.key === "Tab") { e.preventDefault(); window.bw.toggleBrowse(); }
   else if (e.key === "Escape") window.bw.escape();
   else if (e.key === "`") window.bw.toggleSettings();
+  else if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.altKey && !e.metaKey) window.bw.fullscreen(!fullscreen);
   else if (e.key === " ") window.bw.media("play_pause");
   else if (e.key === "ArrowRight") window.bw.media("next");
   else if (e.key === "ArrowLeft") window.bw.media("prev");

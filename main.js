@@ -141,8 +141,9 @@ function applyMode() {
     unpin();
     const w = Math.round(b.width * 0.5), h = Math.round(b.height * 0.5);
     viz.setBounds({ x: b.x + (b.width - w) / 2, y: b.y + (b.height - h) / 2, width: w, height: h });
-    viz.setAlwaysOnTop(S.mode === "ontop", "floating");
-    viz.show();
+    // Windows won't let a background-launched app take the front; topmost for a moment brings it up anyway
+    viz.setAlwaysOnTop(true, "floating"); viz.show(); viz.moveTop(); viz.focus();
+    setTimeout(() => viz && !viz.isDestroyed() && viz.setAlwaysOnTop(S.mode === "ontop", "floating"), 400);
   }
 }
 
@@ -196,7 +197,7 @@ function buildTray() {
   tray.setToolTip("Bandwave");
   const menu = tray.menu = () => Menu.buildFromTemplate([
     { label: "Settings", click: openSettings },
-    { label: "Full screen  (Ctrl+Alt+F)", click: () => setFullscreen(!fullscreen) },
+    { label: "Full screen  (F)", click: () => setFullscreen(!fullscreen) },
     { label: "Album mode (colours from the cover)", type: "checkbox", checked: S.theme === "album",
       click: () => set(S.theme === "album" ? { theme: S.prevTheme || "nebula" } : { prevTheme: S.theme, theme: "album" }) },
     { label: "Profiles", submenu: Object.keys(readProfiles()).length
@@ -266,7 +267,7 @@ app.whenReady().then(() => {
   buildTray();
   syncSpotifyWatch();
   watchSpotifyExit();
-  globalShortcut.register("Control+Alt+F", () => setFullscreen(!fullscreen));
+  // no global Ctrl+Alt+F any more: it fired by itself right after launch (owner 2026-11-22); full screen = F in Bandwave
   globalShortcut.register("Control+Alt+Space", () => tell("play_pause"));
   globalShortcut.register("Control+Alt+Right", () => tell("next"));
   globalShortcut.register("Control+Alt+Left", () => tell("prev"));

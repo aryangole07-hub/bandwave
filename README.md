@@ -6,7 +6,7 @@ reacts to whatever your PC is playing, and shows the Spotify (or any player's) s
 - Start: double-click `start.vbs`. It lives in the tray; click the tray icon for settings.
 - Shapes: circle, polygon, star, heart, infinity, spiral, line, wave. Styles: bars, smooth curve, dots, LED blocks.
 - Bands: count, lowest/highest Hz with log/mel/linear spacing, or your own band edges in Hz.
-- Shortcuts: Ctrl+Alt+F full screen, Ctrl+Alt+Space play/pause, Ctrl+Alt+Left/Right skip.
+- Shortcuts: F full screen (in Bandwave), Ctrl+Alt+Space play/pause, Ctrl+Alt+Left/Right skip.
 
 How it works: Electron draws the visualizer on a canvas from Chromium's system-audio loopback (Web Audio FFT, 16384 points).
 `helper/media.py` reads the Windows media session (title, artist, cover, play/pause/skip) and pins the window into the
