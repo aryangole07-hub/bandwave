@@ -140,7 +140,8 @@ function analyse(dt) {
     drums(now, dt);
   } else beatClock(now);
   bassAvg += (bass - bassAvg) * Math.min(1, dt * 2.5);
-  lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // falls back well before the next beat
+  lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // demo only now
+  beatPhase = (beatPhase + (dt * 1000) / beatMs) % 1;
   let all = 0; for (let i = 0; i < n; i++) all += levels[i];
   energy += ((n ? all / n : 0) * 1.6 - energy) * Math.min(1, dt * 4);
   pulse *= Math.pow(0.02, dt);
@@ -175,20 +176,13 @@ function drums(now, dt) {
   }
   fluxAvg += (flux - fluxAvg) * k; fluxVar += ((flux - fluxAvg) ** 2 - fluxVar) * k;
 }
-// Drum hits detected by the helper (kick / snare on the raw audio). The lyrics pop only on PROMINENT hits
-// (owner 2026-11-22): a hit must be among the strongest of the last ~4 s (top 30%, and at least 0.55), snares need
-// to be stronger still, and there is at most one pop per beat. The size follows how far the hit stands out.
-let lastLyricHit = 0, bpmConf = 0, nextBeat = 0;
-const recentHits = [];
+// Drum hits detected by the helper (kick / snare on the raw audio) drive the visuals' pulse. The lyrics don't follow
+// hits any more (owner 2026-11-22): they breathe on the tempo clock, which kicks only keep in phase.
+let bpmConf = 0, nextBeat = 0, beatPhase = 0;
 window.bw.onHit((m) => {
-  const now = performance.now(), w = m.s * (m.k === "kick" ? 1 : 0.8);
-  recentHits.push([now, w]);
-  while (recentHits.length && now - recentHits[0][0] > 4000) recentHits.shift();
-  const sorted = recentHits.map((h) => h[1]).sort((a, b) => a - b), bar = Math.max(0.55, sorted[Math.floor(sorted.length * 0.7)] || 0);
-  if (w >= bar && now - lastLyricHit >= beatMs * 0.9) {
-    lyricPulse = Math.max(lyricPulse, clamp(0.55 + (w - bar) / Math.max(0.1, 1 - bar) * 0.45, 0.55, 1));
-    lastLyricHit = now;
-  }
+  const now = performance.now();
+  // phase lock: a kick pulls the beat clock a quarter of the way toward "on the beat"; one odd hit barely moves it
+  if (m.k === "kick") { const err = beatPhase > 0.5 ? beatPhase - 1 : beatPhase; beatPhase = (beatPhase - err * 0.25 + 1) % 1; }
   if (m.k === "kick") { pulse = Math.max(pulse, 0.6 + 0.4 * m.s); if (m.s > 0.5) burst(); nextBeat = now + beatMs; lastBeat = now; }
 });
 window.bw.onBpm((m) => { bpmConf = m.conf; if (m.conf >= 0.25) beatMs += (60000 / m.bpm - beatMs) * 0.5; });
@@ -502,10 +496,12 @@ function lyricsFrame() {
   }
   if (!cur) return;
   // Only the current line is touched each frame (styling the whole song's lines every frame cost ~1 CPU core).
-  // Drum hits kick its size; loud passages swell it; the variable font (heavier + narrower when loud) is
+  // It breathes with the beat; loud passages swell it; the variable font (heavier + narrower when loud) is
   // stepped so text is re-shaped a few times a second, not every frame.
   const e = clamp(energy, 0, 1), b = S.lyricsBounce ?? 1;
-  cur.style.transform = `scale(${(1 + lyricPulse * 0.34 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
+  // breath: largest on the beat, smallest between, smooth all the way; deeper when the tempo is sure and the song is loud
+  const breath = DEMO ? lyricPulse : Math.pow(0.5 + 0.5 * Math.cos(2 * Math.PI * beatPhase), 1.6) * clamp(0.35 + bpmConf, 0.35, 1) * clamp(0.4 + e, 0.4, 1);
+  cur.style.transform = `scale(${(1 + breath * 0.2 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
   if (cur.classList.contains("soft")) return;
   const font = `"wght" ${Math.round((330 + 370 * e) / 40) * 40}, "wdth" ${Math.round((100 - 25 * e) / 5) * 5}`;
   if (font !== lyrFont) { lyrFont = font; cur.style.fontVariationSettings = font; }

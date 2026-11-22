@@ -60,7 +60,7 @@ const SCHEMA = [
     ["spin", "Record speed", "range", 0, 0.6, 0.01, (v) => (v ? v.toFixed(2) + " /s" : "still"), (s) => s.coverCenter],
     ["lyrics", "Lyrics", "toggle"],
     ["lyricsPos", "Lyrics position", "seg", ["bottom-left", "record"], (s) => s.lyrics],
-    ["lyricsBounce", "Lyrics beat bounce", "range", 0, 2, 0.05, pct, (s) => s.lyrics],
+    ["lyricsBounce", "Lyrics breathing", "range", 0, 2, 0.05, pct, (s) => s.lyrics],
     ["lyricsOffset", "Lyrics timing", "range", -2, 2, 0.1, (v) => (v > 0 ? "+" : "") + v.toFixed(1) + " s", (s) => s.lyrics, "If the words run late, move right; early, move left."],
     ["card", "Now playing card", "seg", ["bottom-left", "bottom-center", "top-left", "hidden"]],
     ["clock", "Clock", "toggle"],
