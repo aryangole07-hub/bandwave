@@ -2,6 +2,7 @@
 const DEFAULTS = {
   mode: "wallpaper",        // wallpaper (behind desktop icons) | window | ontop
   startup: false,           // start with Windows
+  withSpotify: true,        // open Bandwave whenever Spotify starts (watcher runs from logon)
 
   // Layout: the shape the bands are spread around
   shape: "circle",          // circle | polygon | star | heart | infinity | line | wave | spiral

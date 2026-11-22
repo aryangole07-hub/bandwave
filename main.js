@@ -211,9 +211,21 @@ function buildTray() {
   tray.rebuild = () => tray.setContextMenu(menu());
 }
 
+// "Open with Spotify": a logon entry runs spotify-watch.vbs, which opens Bandwave whenever Spotify starts
+function syncSpotifyWatch() {
+  if (TEST) return;
+  const key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", name = "Bandwave with Spotify";
+  const vbs = path.join(__dirname, "spotify-watch.vbs");
+  const args = S.withSpotify ? ["add", key, "/v", name, "/t", "REG_SZ", "/d", `wscript.exe "${vbs}"`, "/f"] : ["delete", key, "/v", name, "/f"];
+  spawn("reg.exe", args, { windowsHide: true }).on("error", () => {});
+  if (S.withSpotify) spawn("wscript.exe", [vbs], { windowsHide: true, detached: true, stdio: "ignore" }).unref();  // start watching now, not only after the next logon
+  else spawn("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | ? CommandLine -like '*spotify-watch.ps1*' | % { Stop-Process -Id $_.ProcessId -Force }"], { windowsHide: true });
+}
+
 function set(patch) {
   const modeChanged = "mode" in patch && patch.mode !== S.mode;
   S = { ...S, ...patch };
+  if ("withSpotify" in patch) syncSpotifyWatch();
   if ("startup" in patch && !TEST) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: [app.getAppPath()] });  // unpackaged: electron.exe + this folder
   save();
   broadcast("settings", S);
@@ -230,6 +242,7 @@ app.whenReady().then(() => {
   startHelper();
   createViz();
   buildTray();
+  syncSpotifyWatch();
   globalShortcut.register("Control+Alt+F", () => setFullscreen(!fullscreen));
   globalShortcut.register("Control+Alt+Space", () => tell("play_pause"));
   globalShortcut.register("Control+Alt+Right", () => tell("next"));
