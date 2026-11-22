@@ -120,6 +120,9 @@ function syncProxy() {
   } else if (!need && proxy) { const p = proxy; proxy = null; setImmediate(() => p.destroy()); }
 }
 
+// unpin only a window that was pinned: "unwallpaper" on a normal window landed after show() and left it hidden
+let pinned = false;
+const unpin = () => { if (pinned) { pinned = false; tell(`unwallpaper ${hwnd()}`); } };
 function applyMode() {
   if (!viz) return;
   const b = screen.getPrimaryDisplay().bounds;
@@ -127,15 +130,15 @@ function applyMode() {
   viz.setSkipTaskbar(!fullscreen && S.mode === "wallpaper");
   viz.webContents.send("fullscreen", fullscreen);
   if (fullscreen) {
-    tell(`unwallpaper ${hwnd()}`);
+    unpin();
     viz.setBounds(b); viz.setAlwaysOnTop(true, "screen-saver"); viz.setIgnoreMouseEvents(false); viz.show(); viz.focus();
     return;
   }
   if (S.mode === "wallpaper") {
     viz.setAlwaysOnTop(false); viz.setBounds(b); viz.showInactive();
-    tell(`wallpaper ${hwnd()}`);
+    pinned = true; tell(`wallpaper ${hwnd()}`);
   } else {
-    tell(`unwallpaper ${hwnd()}`);
+    unpin();
     const w = Math.round(b.width * 0.5), h = Math.round(b.height * 0.5);
     viz.setBounds({ x: b.x + (b.width - w) / 2, y: b.y + (b.height - h) / 2, width: w, height: h });
     viz.setAlwaysOnTop(S.mode === "ontop", "floating");
@@ -285,7 +288,7 @@ async function snap() {
 
 app.on("second-instance", openSettings);
 app.on("window-all-closed", (e) => e.preventDefault?.());  // lives in the tray
-app.on("will-quit", () => { globalShortcut.unregisterAll(); if (viz) tell(`unwallpaper ${hwnd()}`); helper && helper.stdin.end(); });
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (viz) unpin(); helper && helper.stdin.end(); });
 
 ipcMain.on("set", (_e, patch) => set(patch));
 ipcMain.on("reset", () => set({ ...DEFAULTS, mode: S.mode, startup: S.startup }));

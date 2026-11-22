@@ -147,7 +147,8 @@ function analyse(dt) {
   } else beatClock(now);
   bassAvg += (bass - bassAvg) * Math.min(1, dt * 2.5);
   lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // demo only now
-  beatPhase = (beatPhase + (dt * 1000) / beatMs) % 1;
+  beatPhase += (dt * 1000) / beatMs;
+  if (beatPhase >= 1) { beatPhase -= 1; beatCount++; }
   let all = 0; for (let i = 0; i < n; i++) all += levels[i];
   energy += ((n ? all / n : 0) * 1.6 - energy) * Math.min(1, dt * 4);
   pulse *= Math.pow(0.02, dt);
@@ -184,7 +185,7 @@ function drums(now, dt) {
 }
 // Drum hits detected by the helper (kick / snare on the raw audio) drive the visuals' pulse. The lyrics don't follow
 // hits any more (owner 2026-11-22): they breathe on the tempo clock, which kicks only keep in phase.
-let bpmConf = 0, nextBeat = 0, beatPhase = 0;
+let bpmConf = 0, nextBeat = 0, beatPhase = 0, beatCount = 0;
 window.bw.onHit((m) => {
   const now = performance.now();
   // phase lock: a kick pulls the beat clock a quarter of the way toward "on the beat"; one odd hit barely moves it
@@ -506,8 +507,11 @@ function lyricsFrame() {
   // stepped so text is re-shaped a few times a second, not every frame.
   const e = clamp(energy, 0, 1), b = S.lyricsBounce ?? 1;
   // breath: largest on the beat, smallest between, smooth all the way; deeper when the tempo is sure and the song is loud
-  const breath = DEMO ? lyricPulse : Math.pow(0.5 + 0.5 * Math.cos(2 * Math.PI * beatPhase), 1.6) * clamp(0.35 + bpmConf, 0.35, 1) * clamp(0.4 + e, 0.4, 1);
-  cur.style.transform = `scale(${(1 + breath * 0.2 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
+  // one breath per 4 beats (a bar), a quick swell and fall around the bar's first beat
+  const barPh = ((beatCount % 4) + beatPhase) / 4;
+  const d = Math.min(barPh, 1 - barPh) / 0.05;  // distance to the downbeat, in half-widths of the bump
+  const breath = DEMO ? lyricPulse : (d < 1 ? 0.5 + 0.5 * Math.cos(Math.PI * d) : 0) * clamp(0.5 + bpmConf, 0.5, 1) * clamp(0.55 + e, 0.55, 1);
+  cur.style.transform = `scale(${(1 + breath * 0.38 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
   if (cur.classList.contains("soft")) return;
   const font = `"wght" ${Math.round((330 + 370 * e) / 40) * 40}, "wdth" ${Math.round((100 - 25 * e) / 5) * 5}`;
   if (font !== lyrFont) { lyrFont = font; cur.style.fontVariationSettings = font; }

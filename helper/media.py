@@ -106,6 +106,7 @@ async def main():
             out({"type": "log", "msg": f"pinned {arg} under WorkerW"})
         elif cmd == "unwallpaper":
             u32.SetParent(int(arg), None)
+            u32.ShowWindow(int(arg), 8)  # SW_SHOWNA: back to a normal top-level window, still visible
         elif s and cmd == "play_pause":
             await s.try_toggle_play_pause_async()
         elif s and cmd == "next":
