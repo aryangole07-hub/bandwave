@@ -61,6 +61,7 @@ const SCHEMA = [
     ["card", "Now playing card", "seg", ["bottom-left", "bottom-center", "top-left", "hidden"]],
     ["clock", "Clock", "toggle"],
     ["clock24", "24-hour clock", "toggle", (s) => s.clock],
+    ["keyGuide", "Key guide (top right)", "toggle"],
     ["renderScale", "Render quality", "range", 0.35, 1, 0.05, pct, null, "Lower = lighter on the PC. 50% is a 1080p canvas; glow hides the difference on 4K."],
     ["fps", "Frame rate cap", "seg", [30, 60]],
     ["startup", "Start with Windows", "toggle"],

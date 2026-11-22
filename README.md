@@ -16,3 +16,5 @@ Setup (already done here): `npm install`, then `py -3.12 -m venv .venv` and
 `.venv\Scripts\pip install winrt-runtime winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections`.
 
 Test hooks: `BW_DEMO=1` feeds a fake spectrum; `BW_SNAP=<dir>` saves both windows as PNG and quits; `BW_SET=<json>` overrides settings for that run.
+
+uiautomation (pip) is also needed for the Spotify browser.

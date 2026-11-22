@@ -20,7 +20,7 @@ function loadProfile(name) {
 }
 let S = { ...load(), ...(process.env.BW_SET ? JSON.parse(process.env.BW_SET) : {}) };  // BW_SET: test hook
 let viz, settingsWin, tray, helper, media = { type: "media", title: null };
-let fullscreen = false, saveTimer;
+let fullscreen = false, saveTimer, browseWin;
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(FILE, "utf8")) }; } catch { return { ...DEFAULTS }; }
@@ -78,6 +78,7 @@ function startHelper() {
         const m = JSON.parse(line);
         if (m.type === "log") console.log("[helper]", m.msg);
         if (m.type === "pos") broadcast("pos", m);
+        if (m.type === "browse" && browseWin && !browseWin.isDestroyed()) browseWin.webContents.send("browse", m);
         if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); fetchLyrics(media); }
       } catch {}
     }
@@ -132,6 +133,23 @@ function openSettings() {
   settingsWin.webContents.once("did-finish-load", () => { settingsWin.webContents.send("settings", S); settingsWin.webContents.send("media", media); });
 }
 
+// Spotify browser: a glass panel on top of everything (Tab in Bandwave, Ctrl+Alt+B anywhere)
+function toggleBrowse() {
+  if (browseWin && !browseWin.isDestroyed() && browseWin.isVisible()) { browseWin.hide(); return; }
+  if (!browseWin || browseWin.isDestroyed()) {
+    const b = screen.getPrimaryDisplay().workArea, w = 760, h = 680;
+    browseWin = new BrowserWindow({
+      x: Math.round(b.x + (b.width - w) / 2), y: Math.round(b.y + (b.height - h) / 2), width: w, height: h,
+      frame: false, transparent: true, resizable: false, skipTaskbar: true, show: false, alwaysOnTop: true,
+      webPreferences: { preload: path.join(__dirname, "preload.js") },
+    });
+    browseWin.setAlwaysOnTop(true, "screen-saver");
+    browseWin.loadFile("browse.html");
+    browseWin.on("blur", () => browseWin && !browseWin.isDestroyed() && browseWin.hide());  // click away to close
+    browseWin.once("ready-to-show", () => { browseWin.show(); browseWin.focus(); });
+  } else { browseWin.show(); browseWin.focus(); browseWin.webContents.send("browse-open"); }
+}
+
 function setFullscreen(on) { fullscreen = on; applyMode(); }
 
 function iconImage() { return nativeImage.createFromPath(path.join(__dirname, "icon.png")); }
@@ -179,6 +197,7 @@ app.whenReady().then(() => {
   globalShortcut.register("Control+Alt+Space", () => tell("play_pause"));
   globalShortcut.register("Control+Alt+Right", () => tell("next"));
   globalShortcut.register("Control+Alt+Left", () => tell("prev"));
+  globalShortcut.register("Control+Alt+B", toggleBrowse);
   if (!fs.existsSync(FILE)) openSettings();  // first run: show what it can do
   screen.on("display-metrics-changed", applyMode);
   if (process.env.BW_SNAP) setTimeout(snap, 7000);
@@ -201,6 +220,8 @@ app.on("will-quit", () => { globalShortcut.unregisterAll(); if (viz) tell(`unwal
 ipcMain.on("set", (_e, patch) => set(patch));
 ipcMain.on("reset", () => set({ ...DEFAULTS, mode: S.mode, startup: S.startup }));
 ipcMain.on("media-cmd", (_e, cmd) => tell(cmd));
+ipcMain.on("toggle-browse", toggleBrowse);
+ipcMain.on("browse", (_e, cmd, arg) => tell(`browse_${cmd} ${String(arg || "").replace(/[\r\n]/g, " ")}`));
 ipcMain.handle("profiles", () => readProfiles());
 ipcMain.handle("profile-save", (_e, name) => {
   const { startup, mode, ...look } = S;  // a profile is a look, not where/when the app runs

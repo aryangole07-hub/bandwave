@@ -50,6 +50,7 @@ const DEFAULTS = {
   lyricsOffset: 0,          // seconds; + shows lines earlier
   card: "bottom-left",      // bottom-left | bottom-center | top-left | hidden
   clock: true, clock24: false,
+  keyGuide: true,           // translucent list of keys, top right
   renderScale: 0.5,         // drawing resolution vs the screen (1 = full 4K, much heavier; 0.5 = 1080p canvas)
   fps: 60,                  // frame cap
 };

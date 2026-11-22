@@ -24,9 +24,13 @@ u32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARA
                                     wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
 
 
+_lock = threading.Lock()
+
+
 def out(obj):
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+    with _lock:  # the Spotify browser thread writes too
+        sys.stdout.write(json.dumps(obj) + "\n")
+        sys.stdout.flush()
 
 
 def worker_w():
@@ -78,6 +82,8 @@ async def cover(ref):
 
 async def main():
     mgr = await Manager.request_async()
+    from spotify_ui import SpotifyUI
+    browser = SpotifyUI(out)
     loop = asyncio.get_running_loop()
     state = {"session": None}
 
@@ -90,7 +96,9 @@ async def main():
     async def run(line):
         cmd, _, arg = line.strip().partition(" ")
         s = state["session"]
-        if cmd == "wallpaper":
+        if cmd.startswith("browse_"):
+            browser.ask(cmd[7:], arg)
+        elif cmd == "wallpaper":
             wallpaper(int(arg))
             out({"type": "log", "msg": f"pinned {arg} under WorkerW"})
         elif cmd == "unwallpaper":

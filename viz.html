@@ -82,6 +82,14 @@
   #clock.on { opacity: .92; }
   #clock .h { font-size: clamp(48px, 6.2vw, 120px); font-weight: 200; letter-spacing: -.03em; line-height: 1; }
   #clock .d { font-size: clamp(14px, 1.1vw, 22px); opacity: .7; margin-top: 6px; letter-spacing: .04em; }
+  #keys { position: absolute; right: 3.4vw; top: calc(4.5vh + clamp(48px, 6.2vw, 120px) + 64px); display: grid; grid-template-columns: auto auto;
+    gap: 7px 14px; align-items: center; justify-items: end; font-size: clamp(12px, .78vw, 15px); color: #fff; opacity: .34;
+    transition: opacity 500ms ease-out; text-shadow: 0 1px 12px rgba(0,0,0,.5); pointer-events: none; }
+  #keys.flash { opacity: .85; transition-duration: 120ms; }
+  #keys.off { display: none; }
+  #keys kbd { font: 600 .86em "Bahnschrift", "Segoe UI", sans-serif; padding: 3px 8px; border-radius: 7px; background: rgba(255,255,255,.1);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); letter-spacing: .02em; white-space: nowrap; }
+  #keys span { justify-self: start; opacity: .85; }
   #hint { position: absolute; top: 20px; left: 50%; translate: -50% 0; font-size: 13px; opacity: 0; transition: opacity 400ms; background: rgba(0,0,0,.4); padding: 6px 12px; border-radius: 99px; }
   body.fs #hint { opacity: .55; animation: hide 0s 4s forwards; }
   @keyframes hide { to { opacity: 0; } }
@@ -114,6 +122,7 @@
     </div>
   </div>
   <div id="clock"><div class="h" id="clockH"></div><div class="d" id="clockD"></div></div>
+  <div id="keys" aria-hidden="true"></div>
   <div id="hint">Space play / pause · ← → skip · ` settings · Esc window</div>
   <script src="viz.js"></script>
 </body>

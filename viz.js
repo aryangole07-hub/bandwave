@@ -373,6 +373,19 @@ function lyricsFrame() {
   box.style.setProperty("--litGlow", recGlow.replace(",.38)", ",.95)"));
 }
 
+// ---------- key guide (top right) ----------
+function keyGuide() {
+  // On the wallpaper Bandwave can't take key presses, so it lists the Ctrl+Alt shortcuts that work from anywhere.
+  const wall = S.mode === "wallpaper" && !fullscreen;
+  const rows = wall
+    ? [["Ctrl Alt B", "Browse Spotify"], ["Ctrl Alt Space", "Play / pause"], ["Ctrl Alt ← →", "Previous / next"], ["Ctrl Alt F", "Full screen"]]
+    : [["Tab", "Browse Spotify"], ["Space", "Play / pause"], ["← →", "Previous / next"], ["`", "Settings"], ["Esc", fullscreen ? "Exit full screen" : "—"], ["Ctrl Alt F", "Full screen"]];
+  const el = $("keys");
+  el.classList.toggle("off", !S.keyGuide);
+  el.innerHTML = rows.filter((r) => r[1] !== "—").map(([k, t]) => `<kbd>${k}</kbd><span>${t}</span>`).join("");
+}
+function flashKeys() { const el = $("keys"); el.classList.add("flash"); clearTimeout(flashKeys.t); flashKeys.t = setTimeout(() => el.classList.remove("flash"), 900); }
+
 // ---------- scene ----------
 function resize() {
   scale = devicePixelRatio * (S ? S.renderScale : 0.75);
@@ -390,6 +403,7 @@ function scene() {
   $("card").className = `${S.card} ${S.card !== "hidden" && media.title ? "on" : ""}`;
   $("clock").classList.toggle("on", !!S.clock);
   document.body.classList.toggle("drag", !fullscreen && S.mode !== "wallpaper");
+  keyGuide();
   buildLut();
 }
 function tick() {
@@ -422,7 +436,9 @@ $("prev").onclick = () => window.bw.media("prev");
 $("next").onclick = () => window.bw.media("next");
 $("pp").onclick = () => window.bw.media("play_pause");
 addEventListener("keydown", (e) => {
-  if (e.key === "Escape") window.bw.escape();
+  flashKeys();
+  if (e.key === "Tab") { e.preventDefault(); window.bw.toggleBrowse(); }
+  else if (e.key === "Escape") window.bw.escape();
   else if (e.key === "`") window.bw.toggleSettings();
   else if (e.key === " ") window.bw.media("play_pause");
   else if (e.key === "ArrowRight") window.bw.media("next");
