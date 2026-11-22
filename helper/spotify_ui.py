@@ -93,7 +93,16 @@ class SpotifyUI:
 
     def search(self, q):
         w = self._window()
-        os.startfile("spotify:search:" + urllib.parse.quote(q))
+        # Type into Spotify's own search box through UI Automation: Spotify updates in the background and never
+        # comes to the front (a spotify:search: link would focus it). The link is only the fallback.
+        box = w.ComboBoxControl(Name="What do you want to play?", searchDepth=30)
+        if box.Exists(1):
+            try:
+                box.GetValuePattern().SetValue(q)
+            except Exception:
+                pass  # Chromium often reports EVENT_E_ALL_SUBSCRIBERS_FAILED although the text is set; the wait below checks
+        else:
+            os.startfile("spotify:search:" + urllib.parse.quote(q))
         deadline, items = time.time() + 9, []
         while time.time() < deadline:  # wait for this query's results page to render
             time.sleep(0.6)
