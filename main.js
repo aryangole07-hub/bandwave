@@ -46,9 +46,9 @@ function parseLrc(text) {
   }
   return out.sort((a, b) => a.t - b.t);
 }
-async function fetchLyrics(m) {
+async function fetchLyrics(m, retry = false) {
   const key = m.title ? `${m.title}|${m.artist}` : null;
-  if (key === lyricKey) return;
+  if (key === lyricKey && !retry) return;
   lyricKey = key; lyrics = { key, lines: null }; broadcast("lyrics", lyrics);
   if (!key) return;
   const headers = { "User-Agent": "Bandwave/0.1 (desktop music visualizer)" };
@@ -64,7 +64,10 @@ async function fetchLyrics(m) {
       j = hits.find((h) => h.syncedLyrics && (!m.dur || Math.abs(h.duration - m.dur) < 8)) || hits.find((h) => h.syncedLyrics) || j;
     }
     if (j && j.syncedLyrics) lines = parseLrc(j.syncedLyrics);
-  } catch (e) { console.log("[lyrics]", e.message); }
+  } catch (e) {
+    console.log("[lyrics]", e.message);
+    if (!retry) { setTimeout(() => { if (lyricKey === key) fetchLyrics(m, true); }, 8000); return; }
+  }
   if (lyricKey === key) { lyrics = { key, lines }; broadcast("lyrics", lyrics); }
 }
 
@@ -90,9 +93,11 @@ function startHelper() {
   });
   helper.stderr.on("data", (d) => process.stderr.write(d));
   if (lastBands) tell(`bands ${lastBands}`);  // a restarted helper needs the band layout again
-  helper.on("exit", () => { if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
+  for (const l of queued.splice(0)) tell(l);
+  helper.on("exit", () => { helper = null; if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
 }
-const tell = (line) => helper && helper.stdin.writable && helper.stdin.write(line + "\n");
+let queued = [];  // commands sent while the helper is (re)starting go out once it is back
+const tell = (line) => { if (helper && helper.stdin.writable) helper.stdin.write(line + "\n"); else if (queued.push(line) > 20) queued.shift(); };
 const hwnd = () => viz.getNativeWindowHandle().readBigUInt64LE(0).toString();
 
 // Alt+Tab (owner 2026-11-22): a real entry in window / full screen. On the wallpaper the visualizer is part of the

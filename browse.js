@@ -1,6 +1,10 @@
 // Spotify browser panel (Tab in Bandwave / Ctrl+Alt+B): your library + search, Enter plays in the Spotify app.
 const $ = (id) => document.getElementById(id);
-let items = [], sel = 0, lastQ = "", library = null, timer;
+let items = [], sel = 0, lastQ = "", library = null, timer, waitT;
+function wait() {
+  clearTimeout(waitT);
+  waitT = setTimeout(() => { lastQ = ""; $("status").textContent = "Spotify didn't answer. Press Enter to try again."; }, 15000);
+}
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z"/></svg>';
 
 function render(list, emptyMsg) {
@@ -24,14 +28,14 @@ function select(i) {
 }
 function play(i) {
   const it = items[i]; if (!it) return;
-  $("status").textContent = `Playing ${it.label}…`;
+  $("status").textContent = `Playing ${it.label}…`; wait();
   window.bw.browse("play", it.play);
 }
 function search() {
   const q = $("q").value.trim();
-  if (!q) { lastQ = ""; library ? render(library, "Your library is empty.") : (loading("Reading your library…"), window.bw.browse("library")); return; }
+  if (!q) { lastQ = ""; library ? render(library, "Your library is empty.") : (loading("Reading your library…"), wait(), window.bw.browse("library")); return; }
   if (q === lastQ) return;
-  lastQ = q; sel = 0; loading("Searching Spotify…");
+  lastQ = q; sel = 0; loading("Searching Spotify…"); wait();
   window.bw.browse("search", q);
 }
 function open() { $("q").select(); $("q").focus(); if (!$("q").value) search(); }
@@ -49,10 +53,11 @@ addEventListener("keydown", (e) => {
 });
 $("list").addEventListener("click", (e) => { const it = e.target.closest(".item"); if (it) { select(+it.dataset.i); play(sel); } });
 window.bw.onBrowse((m) => {
+  clearTimeout(waitT);
   if (m.kind === "library") { library = m.items; $("status").textContent = ""; if (!$("q").value.trim()) render(library, "Your library is empty."); }
   else if (m.kind === "search" && m.q === lastQ) { $("status").textContent = m.items.length ? `${m.items.length} results` : ""; render(m.items, `Nothing found for “${esc(m.q)}”.`); }
   else if (m.kind === "played") { $("status").textContent = "Playing"; setTimeout(() => window.bw.toggleBrowse(), 500); }
-  else if (m.kind === "error") { $("status").textContent = m.msg; }
+  else if (m.kind === "error") { lastQ = ""; $("status").textContent = m.msg; }  // lets the same search be retried
 });
 window.bw.onBrowseOpen(open);
 open();
