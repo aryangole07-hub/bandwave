@@ -185,10 +185,18 @@ function drums(now, dt) {
 }
 // Drum hits detected by the helper (kick / snare on the raw audio) drive the visuals' pulse. The lyrics don't follow
 // hits any more (owner 2026-11-22): they breathe on the tempo clock, which kicks only keep in phase.
-let bpmConf = 0, nextBeat = 0, beatPhase = 0, beatCount = 0;
+let bpmConf = 0, nextBeat = 0, beatPhase = 0, beatCount = 0, downbeat = 0;
+// downbeat finder (4/4): kicks score a beat slot, snares count against it (they sit on 2 and 4); old evidence fades.
+// The bar's first beat is the best slot, and it only moves when another slot is clearly ahead.
+const slotScore = [0, 0, 0, 0];
 window.bw.onHit((m) => {
   const now = performance.now();
   // phase lock: a kick pulls the beat clock a quarter of the way toward "on the beat"; one odd hit barely moves it
+  const slot = (beatCount + (beatPhase > 0.5 ? 1 : 0)) % 4;  // the beat this hit belongs to
+  for (let k = 0; k < 4; k++) slotScore[k] *= 0.97;
+  slotScore[slot] += m.k === "kick" ? m.s : -0.6 * m.s;
+  const best = slotScore.indexOf(Math.max(...slotScore));
+  if (slotScore[best] > slotScore[downbeat] + 0.5) downbeat = best;
   if (m.k === "kick") { const err = beatPhase > 0.5 ? beatPhase - 1 : beatPhase; beatPhase = (beatPhase - err * 0.25 + 1) % 1; }
   if (m.k === "kick") { pulse = Math.max(pulse, 0.6 + 0.4 * m.s); if (m.s > 0.5) burst(); nextBeat = now + beatMs; lastBeat = now; }
 });
@@ -507,8 +515,8 @@ function lyricsFrame() {
   // stepped so text is re-shaped a few times a second, not every frame.
   const e = clamp(energy, 0, 1), b = S.lyricsBounce ?? 1;
   // breath: largest on the beat, smallest between, smooth all the way; deeper when the tempo is sure and the song is loud
-  // one breath per 4 beats (a bar), a quick swell and fall around the bar's first beat
-  const barPh = ((beatCount % 4) + beatPhase) / 4;
+  // one breath per bar, a swell and fall around the bar's first beat (the downbeat, found from the drums)
+  const barPh = ((((beatCount - downbeat) % 4) + 4) % 4 + beatPhase) / 4;  // 0 = the bar's first beat
   const d = Math.min(barPh, 1 - barPh) / 0.125;  // distance to the downbeat, in half-widths of the bump (spans 25% of the bar)
   const breath = DEMO ? lyricPulse : (d < 1 ? 0.5 + 0.5 * Math.cos(Math.PI * d) : 0) * clamp(0.5 + bpmConf, 0.5, 1) * clamp(0.55 + e, 0.55, 1);
   cur.style.transform = `scale(${(1 + breath * 0.38 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
