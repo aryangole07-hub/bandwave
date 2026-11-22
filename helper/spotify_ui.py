@@ -3,7 +3,7 @@ your library, search, and press Play on anything without a Spotify login or API 
 
 Runs on its own thread (UIA calls block for 1-3 s); results go out through the emit callback.
 """
-import ctypes, os, queue, threading, time, urllib.parse
+import ctypes, os, queue, re, threading, time, urllib.parse
 from ctypes import wintypes
 
 u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
@@ -65,6 +65,9 @@ def split(name):
     return (title, who) if by else (body, "")
 
 
+ROW = re.compile(r"^(.+?)(?: Pinned)? (Playlist|Album|Artist|Podcast|Audiobook|Show)(?: \u2022 (.+))?$")
+
+
 class SpotifyUI:
     def __init__(self, emit):
         self.emit, self.q = emit, queue.Queue()
@@ -113,9 +116,21 @@ class SpotifyUI:
         w = self._window()
         grid = w.DataGridControl(Name="Your Library", searchDepth=30)
         items = self._plays(grid, 14) if grid.Exists(3) else []
+        if grid.Exists(0) and not items:  # collapsed sidebar: rows have no "Play X" buttons, only "Name Playlist • Owner"
+            items = self._rows(grid)
         for i in items:
             i["section"] = "Your library"
         self.emit({"type": "browse", "kind": "library", "items": items})
+
+    def _rows(self, grid):
+        out, seen = [], set()
+        for c, _ in self.auto.WalkControl(grid, maxDepth=6):
+            if c.ControlTypeName == "ButtonControl" and c.Name and c.Name not in seen:
+                m = ROW.match(c.Name)
+                if m:
+                    seen.add(c.Name)
+                    out.append({"label": m.group(1), "sub": " · ".join(x for x in (m.group(2), m.group(3)) if x), "play": "row:" + c.Name})
+        return out
 
     def search(self, q):
         w, h = self._window(), spotify_hwnd()
@@ -146,6 +161,13 @@ class SpotifyUI:
 
     def play(self, name):
         w = self._window()
+        if name.startswith("row:"):  # a collapsed-library row: open it in the background, then press that page's Play
+            row = w.DataGridControl(Name="Your Library", searchDepth=30).ButtonControl(Name=name[4:], searchDepth=6)
+            if not row.Exists(3):
+                raise RuntimeError("that item is no longer in your Spotify library")
+            keep_in_background(spotify_hwnd(), lambda: row.GetInvokePattern().Invoke())
+            name = "Play " + ROW.match(name[4:]).group(1)
+            w.ButtonControl(Name=name, searchDepth=45).Exists(6)  # wait for the page
         b = w.ButtonControl(Name=name, searchDepth=45)
         if not b.Exists(3):
             raise RuntimeError("that item is no longer on Spotify's screen; search again")
