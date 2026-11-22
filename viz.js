@@ -175,12 +175,20 @@ function drums(now, dt) {
   }
   fluxAvg += (flux - fluxAvg) * k; fluxVar += ((flux - fluxAvg) ** 2 - fluxVar) * k;
 }
-// Drum hits detected by the helper (kick / snare on the raw audio). The lyric bounce takes at most two per beat, so
-// it pumps with the groove instead of flickering on every percussion sound.
+// Drum hits detected by the helper (kick / snare on the raw audio). The lyrics pop only on PROMINENT hits
+// (owner 2026-11-22): a hit must be among the strongest of the last ~4 s (top 30%, and at least 0.55), snares need
+// to be stronger still, and there is at most one pop per beat. The size follows how far the hit stands out.
 let lastLyricHit = 0, bpmConf = 0, nextBeat = 0;
+const recentHits = [];
 window.bw.onHit((m) => {
-  const now = performance.now();
-  if (now - lastLyricHit >= beatMs * 0.45) { lyricPulse = Math.max(lyricPulse, m.s * (m.k === "kick" ? 1 : 0.75)); lastLyricHit = now; }
+  const now = performance.now(), w = m.s * (m.k === "kick" ? 1 : 0.8);
+  recentHits.push([now, w]);
+  while (recentHits.length && now - recentHits[0][0] > 4000) recentHits.shift();
+  const sorted = recentHits.map((h) => h[1]).sort((a, b) => a - b), bar = Math.max(0.55, sorted[Math.floor(sorted.length * 0.7)] || 0);
+  if (w >= bar && now - lastLyricHit >= beatMs * 0.9) {
+    lyricPulse = Math.max(lyricPulse, clamp(0.55 + (w - bar) / Math.max(0.1, 1 - bar) * 0.45, 0.55, 1));
+    lastLyricHit = now;
+  }
   if (m.k === "kick") { pulse = Math.max(pulse, 0.6 + 0.4 * m.s); if (m.s > 0.5) burst(); nextBeat = now + beatMs; lastBeat = now; }
 });
 window.bw.onBpm((m) => { bpmConf = m.conf; if (m.conf >= 0.25) beatMs += (60000 / m.bpm - beatMs) * 0.5; });
@@ -188,7 +196,7 @@ window.bw.onBpm((m) => { bpmConf = m.conf; if (m.conf >= 0.25) beatMs += (60000 
 function beatClock(now) {
   if (!nextBeat) nextBeat = now + beatMs;
   if (now < nextBeat) return;
-  if (bpmConf > 0.3 && energy > 0.12 && now - lastLyricHit > beatMs * 0.6) { lyricPulse = Math.max(lyricPulse, 0.5); pulse = Math.max(pulse, 0.35); lastLyricHit = now; }
+  if (bpmConf > 0.3 && energy > 0.12 && now - lastBeat > beatMs * 0.6) pulse = Math.max(pulse, 0.35);  // visuals keep the groove; lyrics don't
   while (nextBeat <= now) nextBeat += beatMs;
 }
 const bpm = () => Math.round(60000 / beatMs);
@@ -497,7 +505,7 @@ function lyricsFrame() {
   // Drum hits kick its size; loud passages swell it; the variable font (heavier + narrower when loud) is
   // stepped so text is re-shaped a few times a second, not every frame.
   const e = clamp(energy, 0, 1), b = S.lyricsBounce ?? 1;
-  cur.style.transform = `scale(${(1 + lyricPulse * 0.34 * b + (e - 0.35) * 0.16 * b).toFixed(3)})`;
+  cur.style.transform = `scale(${(1 + lyricPulse * 0.34 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
   if (cur.classList.contains("soft")) return;
   const font = `"wght" ${Math.round((330 + 370 * e) / 40) * 40}, "wdth" ${Math.round((100 - 25 * e) / 5) * 5}`;
   if (font !== lyrFont) { lyrFont = font; cur.style.fontVariationSettings = font; }
