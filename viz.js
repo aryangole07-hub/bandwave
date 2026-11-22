@@ -509,7 +509,7 @@ function lyricsFrame() {
   // breath: largest on the beat, smallest between, smooth all the way; deeper when the tempo is sure and the song is loud
   // one breath per 4 beats (a bar), a quick swell and fall around the bar's first beat
   const barPh = ((beatCount % 4) + beatPhase) / 4;
-  const d = Math.min(barPh, 1 - barPh) / 0.05;  // distance to the downbeat, in half-widths of the bump
+  const d = Math.min(barPh, 1 - barPh) / 0.125;  // distance to the downbeat, in half-widths of the bump (spans 25% of the bar)
   const breath = DEMO ? lyricPulse : (d < 1 ? 0.5 + 0.5 * Math.cos(Math.PI * d) : 0) * clamp(0.5 + bpmConf, 0.5, 1) * clamp(0.55 + e, 0.55, 1);
   cur.style.transform = `scale(${(1 + breath * 0.38 * b + (e - 0.35) * 0.07 * b).toFixed(3)})`;
   if (cur.classList.contains("soft")) return;
