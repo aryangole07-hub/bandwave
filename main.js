@@ -20,7 +20,7 @@ function loadProfile(name) {
 }
 let S = { ...load(), ...(process.env.BW_SET ? JSON.parse(process.env.BW_SET) : {}) };  // BW_SET: test hook
 let viz, settingsWin, tray, helper, media = { type: "media", title: null };
-let fullscreen = false, saveTimer, browseWin;
+let fullscreen = false, saveTimer, browseWin, lastBands = null, browseBusy = 0;
 
 function load() {
   let s;
@@ -80,6 +80,7 @@ function startHelper() {
       try {
         const m = JSON.parse(line);
         if (m.type === "log") console.log("[helper]", m.msg);
+        if (m.type === "spec") { if (viz && !viz.isDestroyed()) viz.webContents.send("spec", m.v); continue; }
         if (m.type === "pos") broadcast("pos", m);
         if (m.type === "browse" && browseWin && !browseWin.isDestroyed()) browseWin.webContents.send("browse", m);
         if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); fetchLyrics(media); }
@@ -87,6 +88,7 @@ function startHelper() {
     }
   });
   helper.stderr.on("data", (d) => process.stderr.write(d));
+  if (lastBands) tell(`bands ${lastBands}`);  // a restarted helper needs the band layout again
   helper.on("exit", () => { if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
 }
 const tell = (line) => helper && helper.stdin.writable && helper.stdin.write(line + "\n");
@@ -166,7 +168,8 @@ function toggleBrowse() {
     });
     browseWin.setAlwaysOnTop(true, "screen-saver");
     browseWin.loadFile("browse.html");
-    browseWin.on("blur", () => browseWin && !browseWin.isDestroyed() && browseWin.hide());  // click away to close
+    // click away to close; but not while a search/play is running (Spotify grabs focus for a moment, the helper gives it back)
+    browseWin.on("blur", () => { if (browseWin && !browseWin.isDestroyed() && Date.now() > browseBusy) browseWin.hide(); });
     browseWin.once("ready-to-show", () => { browseWin.show(); browseWin.focus(); });
   } else { browseWin.show(); browseWin.focus(); browseWin.webContents.send("browse-open"); }
 }
@@ -209,11 +212,6 @@ function set(patch) {
 }
 
 app.whenReady().then(() => {
-  // System audio for the analyser: Chromium's own WASAPI loopback, granted without a picker.
-  session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => {
-    // thumbnailSize 0: no screen grab just to list sources (a 4K GDI grab stalls the cursor)
-    desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).then((src) => cb({ video: src[0], audio: "loopback" }));
-  });
   startHelper();
   createViz();
   buildTray();
@@ -226,7 +224,7 @@ app.whenReady().then(() => {
   screen.on("display-metrics-changed", applyMode);
   if (process.env.BW_SNAP) setTimeout(snap, 7000);
   if (process.env.BW_PERF) setInterval(() => {  // test hook: CPU per Electron process
-    console.log("[perf]", app.getAppMetrics().map((m) => `${m.type}:${m.cpu.percentCPUUsage.toFixed(1)}%`).join(" "));
+    console.log("[perf] gpu:", app.getGPUFeatureStatus().gpu_compositing, app.getGPUFeatureStatus()["2d_canvas"], app.getAppMetrics().map((m) => `${m.type}:${m.cpu.percentCPUUsage.toFixed(1)}%`).join(" "));
   }, 3000);  // test hook: save what each window shows, then quit
 });
 
@@ -245,7 +243,11 @@ ipcMain.on("set", (_e, patch) => set(patch));
 ipcMain.on("reset", () => set({ ...DEFAULTS, mode: S.mode, startup: S.startup }));
 ipcMain.on("media-cmd", (_e, cmd) => tell(cmd));
 ipcMain.on("toggle-browse", toggleBrowse);
-ipcMain.on("browse", (_e, cmd, arg) => tell(`browse_${cmd} ${String(arg || "").replace(/[\r\n]/g, " ")}`));
+ipcMain.on("bands", (_e, edges) => { lastBands = JSON.stringify(edges); tell(`bands ${lastBands}`); });
+ipcMain.on("browse", (_e, cmd, arg) => {
+  browseBusy = Date.now() + 3000;
+  tell(`browse_${cmd} ${String(arg || "").replace(/\s+/g, " ")}`);
+});
 ipcMain.handle("profiles", () => readProfiles());
 ipcMain.handle("profile-save", (_e, name) => {
   const { startup, mode, ...look } = S;  // a profile is a look, not where/when the app runs

@@ -32,6 +32,32 @@ def spotify_hwnd():
     return found[0] if found else None
 
 
+u32.GetWindow.restype = wintypes.HWND
+u32.GetForegroundWindow.restype = wintypes.HWND
+u32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+
+
+def keep_in_background(h, action):
+    """Chromium focuses the element UI Automation types into or presses, which raises Spotify and takes the keyboard.
+    Remember the focused window, Spotify's place in the stack and whether it was minimised, then put all three back."""
+    fg, above, iconic = u32.GetForegroundWindow(), u32.GetWindow(h, 3), u32.IsIconic(h)  # 3 = GW_HWNDPREV
+    try:
+        return action()
+    finally:
+        for _ in range(4):  # Spotify can grab focus a moment after the call returns
+            time.sleep(0.12)
+            if iconic and not u32.IsIconic(h):
+                u32.ShowWindow(h, 7)  # SW_SHOWMINNOACTIVE
+            elif not iconic and above:
+                u32.SetWindowPos(h, above, 0, 0, 0, 0, 0x0013)  # back under the window that was above it; no move/size/activate
+            if fg and u32.GetForegroundWindow() != fg:
+                me = k32.GetCurrentThreadId()
+                them = u32.GetWindowThreadProcessId(u32.GetForegroundWindow(), None)
+                u32.AttachThreadInput(me, them, True)  # lets this thread hand focus back
+                u32.SetForegroundWindow(fg)
+                u32.AttachThreadInput(me, them, False)
+
+
 def split(name):
     """'Play Tum Hi Ho by Arijit Singh, Mithoon' -> ('Tum Hi Ho', 'Arijit Singh, Mithoon')"""
     body = name[5:].strip()
@@ -92,15 +118,17 @@ class SpotifyUI:
         self.emit({"type": "browse", "kind": "library", "items": items})
 
     def search(self, q):
-        w = self._window()
+        w, h = self._window(), spotify_hwnd()
         # Type into Spotify's own search box through UI Automation: Spotify updates in the background and never
         # comes to the front (a spotify:search: link would focus it). The link is only the fallback.
         box = w.ComboBoxControl(Name="What do you want to play?", searchDepth=30)
         if box.Exists(1):
-            try:
-                box.GetValuePattern().SetValue(q)
-            except Exception:
-                pass  # Chromium often reports EVENT_E_ALL_SUBSCRIBERS_FAILED although the text is set; the wait below checks
+            def typed():
+                try:
+                    box.GetValuePattern().SetValue(q)
+                except Exception:
+                    pass  # Chromium often reports EVENT_E_ALL_SUBSCRIBERS_FAILED although the text is set; the wait below checks
+            keep_in_background(h, typed)
         else:
             os.startfile("spotify:search:" + urllib.parse.quote(q))
         deadline, items = time.time() + 9, []
@@ -121,5 +149,5 @@ class SpotifyUI:
         b = w.ButtonControl(Name=name, searchDepth=45)
         if not b.Exists(3):
             raise RuntimeError("that item is no longer on Spotify's screen; search again")
-        b.GetInvokePattern().Invoke()
+        keep_in_background(spotify_hwnd(), lambda: b.GetInvokePattern().Invoke())
         self.emit({"type": "browse", "kind": "played", "play": name})

@@ -83,7 +83,8 @@ async def cover(ref):
 async def main():
     mgr = await Manager.request_async()
     from spotify_ui import SpotifyUI
-    browser = SpotifyUI(out)
+    from loopback import Loopback
+    browser, audio = SpotifyUI(out), Loopback(out)
     loop = asyncio.get_running_loop()
     state = {"session": None}
 
@@ -96,7 +97,9 @@ async def main():
     async def run(line):
         cmd, _, arg = line.strip().partition(" ")
         s = state["session"]
-        if cmd.startswith("browse_"):
+        if cmd == "bands":
+            audio.set_edges(json.loads(arg))
+        elif cmd.startswith("browse_"):
             browser.ask(cmd[7:], arg)
         elif cmd == "wallpaper":
             wallpaper(int(arg))

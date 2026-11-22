@@ -29,7 +29,8 @@ const SCHEMA = [
     ["thickness", "Thickness", "range", 0.1, 1, 0.01, pct],
     ["rounded", "Rounded ends", "toggle", (s) => s.style === "bars"],
     ["fill", "Fill under curve", "toggle", (s) => s.style === "curve"],
-    ["layers", "Echo layers", "range", 1, 6, 1, (v) => v, (s) => s.style === "curve"],
+    ["layers", "Echo layers", "range", 1, 6, 1, (v) => (v > 1 ? v - 1 : "off")],
+    ["echoBeat", "Echo lag", "range", 0.0625, 1, 0.0625, (v) => (v >= 1 ? "1 beat" : `1/${Math.round(1 / v)} beat`), (s) => s.layers > 1, "Follows the song's tempo, detected from the kick drum."],
   ]],
   ["Colour", [
     ["theme", "Theme", "seg", ["album", "nebula", "sunset", "ocean", "neon", "fire", "ice", "custom"]],

@@ -7,8 +7,11 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; cursor: default; user-select: none;
     font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; color: #fff; }
-  body.drag { -webkit-app-region: drag; }
-  body.drag button { -webkit-app-region: no-drag; }
+  #dragbar { position: absolute; z-index: 5; top: 0; left: 0; right: 0; height: 30px; display: none; -webkit-app-region: drag;
+    background: linear-gradient(rgba(255,255,255,.06), transparent); opacity: 0; transition: opacity 300ms ease-out; }
+  body.drag #dragbar { display: block; }
+  body.drag:not(.nocursor) #dragbar { opacity: 1; }
+  body.nocursor, body.nocursor * { cursor: none !important; }
   #bg { position: absolute; inset: -8%; background-size: cover; background-position: center; transition: opacity 900ms ease-out; }
   #stage { position: absolute; inset: 0; }
   #tint { position: absolute; inset: 0; opacity: 0; transition: opacity 900ms ease-out; }
@@ -47,12 +50,12 @@
   .ln { max-width: 74%; text-align: center; line-height: 1.12; color: #fff; opacity: 0; filter: blur(6px); transform: scale(.78);
     transition: opacity 700ms cubic-bezier(.2,.8,.2,1), filter 700ms cubic-bezier(.2,.8,.2,1), transform 820ms cubic-bezier(.2,1.25,.4,1);
     font-family: "Bahnschrift", "Segoe UI Variable Display", sans-serif; font-variation-settings: "wght" 420, "wdth" 100; text-wrap: balance; }
-  .ln.d1 { opacity: .42; filter: blur(1.4px); transform: scale(.8); }
-  .ln.d2 { opacity: .14; filter: blur(3px); transform: scale(.72); }
+  .ln.d1 { opacity: .42; filter: none; transform: scale(.8); }
+  .ln.d2 { opacity: .14; filter: none; transform: scale(.72); }
   /* beat bounce: big kick on each beat, shrinking back between beats; loud passages swell, quiet ones shrink */
-  .ln.cur { opacity: 1; filter: none; transform: scale(calc(1 + var(--beat, 0) * .32 + var(--swell, 0)));
+  .ln.cur { opacity: 1; filter: none; will-change: transform;
     transition: opacity 700ms cubic-bezier(.2,.8,.2,1), filter 700ms cubic-bezier(.2,.8,.2,1), transform 70ms linear;
-    font-variation-settings: "wght" var(--wght, 520), "wdth" var(--wdth, 100); letter-spacing: var(--ls, 0); }
+    font-variation-settings: "wght" 520, "wdth" 100; }
   .ln.chorus { text-transform: uppercase; letter-spacing: .03em; }
   .ln.loud { font-style: italic; }
   .ln.soft { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-variation-settings: normal; }
@@ -107,6 +110,7 @@
 </head>
 <body>
   <div id="bg"></div>
+  <div id="dragbar" title="Drag to move"></div>
   <div id="tint"></div>
   <div id="stage"><canvas id="viz"></canvas><canvas id="glow"></canvas></div>
   <div id="rec">

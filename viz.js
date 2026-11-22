@@ -11,7 +11,11 @@ let analyser = null, freq = null, sr = 48000;
 let bands = [], raw = new Float32Array(0), levels = new Float32Array(0), hist = [];
 let pts = [], closed = true, cx = 0, cy = 0, R = 1, gap = 4;
 let rot = 0, hue = 0, pulse = 0, bassAvg = 0.1, lastBeat = 0, particles = [], last = performance.now();
+let spec = null;  // latest dB per band from the helper
+// drums + tempo: onsets from spectral flux (kick < 150 Hz, snare/hats 1.5-8 kHz); BPM from the spacing of kicks
+let prevRaw = new Float32Array(0), fluxAvg = 0, fluxVar = 0.001, lastOnset = 0, kicks = [], beatMs = 500, lyricPulse = 0;
 let lutHue = null, lutRGB = [], tint = [0, 0, 0], lut = [], flowPh = 0, energy = 0, spinAng = 0, spinVel = 0, recGlow = '';
+let lyrFont = "";
 let pos = { pos: 0, at: 0, playing: false }, lyr = { key: null, lines: [] }, lyrIdx = -2, lyrLit = -1, lyrEls = [];
 const DEMO = new URLSearchParams(location.search).has("demo");                           // 256 palette colours
 
@@ -69,6 +73,7 @@ function buildLut() {
     lut.push(`rgb(${c.join(",")})`);
   }
   recGlow = lut[0].replace("rgb", "rgba").replace(")", ",.38)");
+  $("track").style.setProperty("--litGlow", recGlow.replace(",.38)", ",.95)"));
   if (S.background === "gradient") {
     const c = stops.map((s) => `rgb(${s.map((v) => Math.round(v * 0.35)).join(",")})`);
     $("bg").style.backgroundImage = `radial-gradient(circle at 30% 30%, ${c[0]}, transparent 60%), radial-gradient(circle at 75% 70%, ${c[2]}, transparent 55%), radial-gradient(circle, ${c[1]}, #05050a 80%)`;
@@ -94,7 +99,9 @@ function buildBands() {
     e = Array.from({ length: n + 1 }, (_, i) => g(a + ((b - a) * i) / n));
   }
   if (e.length < 3) e = [60, 250, 1000, 4000];
-  const hz = sr / (analyser ? analyser.fftSize : 16384);
+  window.bw.setBands(e);  // the helper captures the system audio and reduces its FFT to these bands
+  spec = null;
+  const hz = sr / 16384;
   bands = e.slice(0, -1).map((lo, i) => ({ lo: lo / hz, hi: e[i + 1] / hz, fc: Math.sqrt(lo * e[i + 1]) }));
   raw = new Float32Array(bands.length); levels = new Float32Array(bands.length); hist = [];
 }
@@ -109,11 +116,10 @@ function bandDb(b) {
 }
 function analyse(dt) {
   const n = bands.length;
-  if (analyser && !DEMO) {
-    analyser.getFloatFrequencyData(freq);
+  if (spec && spec.length === n && !DEMO) {
     const top = -14, floor = +S.floorDb;
     for (let i = 0; i < n; i++) {
-      const db = bandDb(bands[i]) + clamp(S.tilt * 3 * Math.log2(bands[i].fc / 1000), -18, 18);
+      const db = spec[i] + clamp(S.tilt * 3 * Math.log2(bands[i].fc / 1000), -18, 18);
       raw[i] = clamp(Math.pow(clamp((db - floor) / (top - floor), 0, 1), 1.35) * S.sensitivity, 0, 1);
     }
   } else if (DEMO) {  // test hook (?demo=1): a fake beat and spectrum, so visuals can be checked silently
@@ -130,9 +136,47 @@ function analyse(dt) {
   const now = performance.now();
   if (bass > bassAvg * 1.3 + 0.04 && bass > 0.3 && now - lastBeat > 170) { lastBeat = now; pulse = 1; burst(); }
   bassAvg += (bass - bassAvg) * Math.min(1, dt * 2.5);
+  drums(now, dt);
   let all = 0; for (let i = 0; i < n; i++) all += levels[i];
   energy += ((n ? all / n : 0) * 1.6 - energy) * Math.min(1, dt * 4);
   pulse *= Math.pow(0.02, dt);
+}
+
+function drums(now, dt) {
+  const n = raw.length;
+  if (prevRaw.length !== n) prevRaw = new Float32Array(n);
+  let fk = 0, ck = 0, fs = 0, cs = 0;
+  for (let i = 0; i < n; i++) {
+    const d = raw[i] - prevRaw[i], fc = bands[i].fc;
+    if (fc < 150) { ck++; if (d > 0) fk += d; } else if (fc > 1500 && fc < 8000) { cs++; if (d > 0) fs += d; }
+  }
+  prevRaw.set(raw);
+  fk = ck ? fk / ck : 0; fs = cs ? fs / cs : 0;
+  const flux = fk + 0.7 * fs, sd = Math.sqrt(fluxVar), k = Math.min(1, dt * 1.6);
+  if (flux > fluxAvg + 1.4 * sd + 0.012 && now - lastOnset > 95) {
+    lastOnset = now;
+    lyricPulse = Math.max(lyricPulse, clamp((flux - fluxAvg) / (3 * sd + 0.02), 0.3, 1));  // every drum hit, sized by how hard it hits
+    if (fk >= fs * 0.7) {  // a kick: feeds the tempo estimate
+      kicks.push(now); if (kicks.length > 24) kicks.shift();
+      const iv = [];
+      for (let j = 1; j < kicks.length; j++) {
+        let d = kicks[j] - kicks[j - 1];
+        if (d < 200 || d > 2000) continue;
+        while (d < 333) d *= 2;  // fold into 70-180 BPM
+        while (d > 857) d /= 2;
+        iv.push(d);
+      }
+      if (iv.length >= 4) { iv.sort((a, b) => a - b); beatMs += (iv[iv.length >> 1] - beatMs) * 0.25; }
+    }
+  }
+  fluxAvg += (flux - fluxAvg) * k; fluxVar += ((flux - fluxAvg) ** 2 - fluxVar) * k;
+  lyricPulse *= Math.exp(-dt / Math.max(0.06, (beatMs / 1000) * 0.3));  // falls back well before the next beat
+}
+const bpm = () => Math.round(60000 / beatMs);
+function histAt(ms) {  // the values as they were ms ago (echo layers lag by a fraction of the beat)
+  const now = performance.now();
+  for (const h of hist) if (now - h.t >= ms) return h.v;
+  return hist.length ? hist[hist.length - 1].v : null;
 }
 
 // ---------- shape ----------
@@ -199,7 +243,11 @@ function smooth(c, P, isClosed) {
   }
   if (isClosed) c.closePath();
 }
+let gradCache = null;
 function strokeGradient() {
+  return gradCache || (gradCache = makeGradient());
+}
+function makeGradient() {
   if (closed && ctx.createConicGradient) {
     const g = ctx.createConicGradient(-Math.PI / 2, cx, cy);
     for (let i = 0; i <= 12; i++) g.addColorStop(i / 12, wrap(i / 12 + flowPh));
@@ -216,7 +264,7 @@ function draw(v) {
   if (S.style === "curve") {
     const layers = clamp(S.layers | 0, 1, 6);
     for (let L = layers - 1; L >= 0; L--) {
-      const src = L === 0 ? v : hist[Math.min(hist.length - 1, L * 4)] || v, grow = 1 + L * 0.12;
+      const src = L === 0 ? v : histAt(L * beatMs * (S.echoBeat || 0.25)) || v, grow = 1 + L * 0.12;
       const tips = pts.map((p, k) => [p[0] + p[2] * len(src[k]) * grow, p[1] + p[3] * len(src[k]) * grow]);
       ctx.globalAlpha = L === 0 ? 1 : 0.45 / L;
       ctx.beginPath(); smooth(ctx, tips, closed);
@@ -232,6 +280,18 @@ function draw(v) {
     ctx.globalAlpha = 1;
     return;
   }
+  const layers = clamp(S.layers | 0, 1, 6);
+  for (let L = layers - 1; L >= 1; L--) {
+    const src = histAt(L * beatMs * (S.echoBeat || 0.25));
+    if (!src || src.length !== N) break;
+    ctx.globalAlpha = 0.5 / L; ctx.lineWidth = lw; ctx.lineCap = "butt";
+    for (let k = 0; k < N; k++) {
+      const [x, y, nx, ny] = pts[k], h = len(src[k]) * (1 + L * 0.06), cap = Math.max(2 * scale, lw * 0.5);
+      ctx.strokeStyle = colour(k, N, src[k]);
+      ctx.beginPath(); ctx.moveTo(x + nx * h, y + ny * h); ctx.lineTo(x + nx * (h + cap), y + ny * (h + cap)); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1; ctx.lineCap = S.rounded ? "round" : "butt";
   const jit = (S.barShake || 0) * gap * 2.2;  // bar shake: each band jitters with its own level (owner 2026-11-22)
   for (let k = 0; k < N; k++) {
     let [x, y, nx, ny] = pts[k];
@@ -286,7 +346,9 @@ function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
   analyse(dt);
   const v = values();
-  hist.unshift(Float32Array.from(v)); if (hist.length > 26) hist.pop();
+  hist.unshift({ t: now, v: Float32Array.from(v) });
+  while (hist.length > 2 && now - hist[hist.length - 1].t > 1800) hist.pop();
+  gradCache = null;
   rot += S.rotate * TAU * dt * (closed || S.shape === "spiral" ? 1 : 0);
   hue = (hue + S.hueDrift * 360 * dt) % 360;
   flowPh = (flowPh + S.flow * dt * (1 + energy * 2.2 + pulse * 1.5)) % 1;
@@ -373,7 +435,8 @@ function lyricsFrame() {
   while (i + 1 < lines.length && lines[i + 1].t <= t) i++;
   if (i !== lyrIdx) {
     lyrIdx = i; lyrLit = -1;
-    lyrEls.forEach((el, k) => { const d = Math.abs(k - i); el.classList.toggle("cur", d === 0); el.classList.toggle("d1", d === 1); el.classList.toggle("d2", d === 2); });
+    lyrEls.forEach((el, k) => { const d = Math.abs(k - i); el.classList.toggle("cur", d === 0); el.classList.toggle("d1", d === 1); el.classList.toggle("d2", d === 2); if (d) { el.style.transform = ""; el.style.fontVariationSettings = ""; } });
+    lyrFont = "";
     const cur = lyrEls[Math.max(0, i)], box = $("lyr");
     if (cur) {
       $("track").style.transform = `translateY(${box.clientHeight / 2 - cur.offsetTop - cur.offsetHeight / 2}px)`;
@@ -389,14 +452,15 @@ function lyricsFrame() {
     for (const w of words) { acc += w.textContent.length; if (acc / total <= p + 0.02) lit++; }
     if (lit !== lyrLit) { lyrLit = lit; [...words].forEach((w, k) => w.classList.toggle("lit", k < lit)); }
   }
-  // the font follows the music: louder = heavier and more condensed; beats kick the scale
-  const e = clamp(energy, 0, 1), box = $("track");
-  box.style.setProperty("--wght", Math.round(330 + 370 * e));
-  box.style.setProperty("--wdth", Math.round(100 - 25 * e));
-  box.style.setProperty("--ls", (0.02 - 0.03 * e).toFixed(3) + "em");
-  box.style.setProperty("--beat", (pulse * (S.lyricsBounce ?? 1)).toFixed(3));
-  box.style.setProperty("--swell", ((e - 0.35) * 0.16 * (S.lyricsBounce ?? 1)).toFixed(3));
-  box.style.setProperty("--litGlow", recGlow.replace(",.38)", ",.95)"));
+  if (!cur) return;
+  // Only the current line is touched each frame (styling the whole song's lines every frame cost ~1 CPU core).
+  // Drum hits kick its size; loud passages swell it; the variable font (heavier + narrower when loud) is
+  // stepped so text is re-shaped a few times a second, not every frame.
+  const e = clamp(energy, 0, 1), b = S.lyricsBounce ?? 1;
+  cur.style.transform = `scale(${(1 + lyricPulse * 0.34 * b + (e - 0.35) * 0.16 * b).toFixed(3)})`;
+  if (cur.classList.contains("soft")) return;
+  const font = `"wght" ${Math.round((330 + 370 * e) / 40) * 40}, "wdth" ${Math.round((100 - 25 * e) / 5) * 5}`;
+  if (font !== lyrFont) { lyrFont = font; cur.style.fontVariationSettings = font; }
 }
 
 // ---------- key guide (top right) ----------
@@ -482,9 +546,13 @@ addEventListener("keydown", (e) => {
   else if (e.key === "ArrowLeft") window.bw.media("prev");
 });
 addEventListener("resize", resize);
+let idle;
+function wake() { document.body.classList.remove("nocursor"); clearTimeout(idle); idle = setTimeout(() => document.body.classList.add("nocursor"), 3000); }
+addEventListener("mousemove", wake); addEventListener("mousedown", wake); wake();
 setInterval(tick, 1000);
 
-async function startAudio() {
+window.bw.onSpec((v) => { spec = v; });
+async function startAudioUnused() {  // kept for reference: Chromium loopback needed a screen capture (cursor stalls)
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: 1, height: 1, frameRate: 1 }, audio: true });
     stream.getVideoTracks().forEach((t) => t.stop());  // only the sound is needed
@@ -495,5 +563,4 @@ async function startAudio() {
     if (S) { buildBands(); layout(); }
   } catch (e) { console.error("audio", e); setTimeout(startAudio, 3000); }
 }
-startAudio();
 requestAnimationFrame(frame);

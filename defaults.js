@@ -25,7 +25,8 @@ const DEFAULTS = {
   thickness: 0.62,          // bar width as a share of the gap
   rounded: true,
   fill: true,               // curve: fill under the line
-  layers: 3,                // curve: echo layers trailing the main line
+  layers: 3,                // echo layers trailing the bands (all styles)
+  echoBeat: 0.25,           // each echo layer lags this fraction of a beat (tempo detected from the kicks)
   theme: "nebula",          // nebula | sunset | ocean | neon | fire | ice | album (colours from the cover) | custom
   custom: "#7c5cff",
   colorBy: "position",      // position | level
