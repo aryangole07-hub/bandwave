@@ -14,6 +14,7 @@ let pts = [], closed = true, cx = 0, cy = 0, R = 1, gap = 4;
 let rot = 0, hue = 0, pulse = 0, bassAvg = 0.1, lastBeat = 0, particles = [], last = performance.now();
 let spec = null;  // latest dB per band from the helper
 // drums + tempo: onsets from spectral flux (kick < 150 Hz, snare/hats 1.5-8 kHz); BPM from the spacing of kicks
+let agcRef = -22;  // running loudest-band level in dB (auto-gain)
 let prevRaw = new Float32Array(0), fluxAvg = 0, fluxVar = 0.001, lastOnset = 0, kicks = [], beatMs = 500, lyricPulse = 0;
 let lutHue = null, lutRGB = [], tint = [0, 0, 0], lut = [], flowPh = 0, energy = 0, spinAng = 0, spinVel = 0, recGlow = '';
 let lyrFont = "";
@@ -119,8 +120,13 @@ function analyse(dt) {
   const n = bands.length;
   if (spec && spec.length === n && !DEMO) {
     const top = -14, floor = +S.floorDb;
+    // auto-gain (owner 2026-11-22 "looks like a quiet song"): follow the loudest band (fast up, slow down) and lift
+    // quiet input (low Spotify volume, soft masters) by up to 30 dB so the bars use their full height
+    let peak = -240; for (let i = 0; i < n; i++) if (spec[i] > peak) peak = spec[i];
+    if (peak > -110) agcRef += (peak - agcRef) * Math.min(1, dt * (peak > agcRef ? 4 : 0.15));
+    const gain = clamp(-22 - agcRef, 0, 30);
     for (let i = 0; i < n; i++) {
-      const db = spec[i] + clamp(S.tilt * 3 * Math.log2(bands[i].fc / 1000), -18, 18);
+      const db = spec[i] + gain + clamp(S.tilt * 3 * Math.log2(bands[i].fc / 1000), -18, 18);
       raw[i] = clamp(Math.pow(clamp((db - floor) / (top - floor), 0, 1), 1.35) * S.sensitivity, 0, 1);
     }
   } else if (DEMO) {  // test hook (?demo=1): a fake beat and spectrum, so visuals can be checked silently

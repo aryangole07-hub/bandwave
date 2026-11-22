@@ -115,14 +115,16 @@ class Loopback:
                                 input_device_index=dev["index"], frames_per_buffer=HOP)
                 buf, pending = np.zeros(N, np.float32), np.zeros(0, np.float32)
                 prev = np.zeros(SMALL // 2 + 1, np.float32)
-                t0 = last_data = time.time()
+                t0 = last_data = last_real = time.time()
                 hops, last_spec, last_tempo, checked = 0, 0.0, time.time(), time.time()
                 while True:
                     avail = stream.get_read_available()
                     now = time.time()
                     if avail >= HOP:
                         pending = np.concatenate([pending, np.frombuffer(stream.read(avail, exception_on_overflow=False), np.float32).reshape(-1, ch).mean(axis=1)])
-                        last_data = now
+                        last_data = last_real = now
+                    elif now - last_real > 5:  # nothing for 5 s: silence, or a dead stream (Bluetooth reconnect); reopen
+                        break
                     elif now - last_data > 0.03:  # loopback delivers nothing during silence: keep time moving with zeros
                         pending = np.concatenate([pending, np.zeros(int((now - last_data) * self.rate), np.float32)])
                         last_data = now
