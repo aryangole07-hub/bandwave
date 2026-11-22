@@ -243,18 +243,21 @@ function smooth(c, P, isClosed) {
   }
   if (isClosed) c.closePath();
 }
-let gradCache = null;
-function strokeGradient() {
-  return gradCache || (gradCache = makeGradient());
+let gradCache = null, echoGradCache = null;
+const ECHO_SHADE = 0.7;  // echoes multiply by this shade: n overlapping echoes = colour x 0.7^n, darker with every overlap
+const shade = (x, f) => { const c = lutRGB[slot(x)]; return `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`; };
+function strokeGradient(echo) {
+  return echo ? echoGradCache || (echoGradCache = makeGradient(ECHO_SHADE)) : gradCache || (gradCache = makeGradient(1));
 }
-function makeGradient() {
+function makeGradient(f) {
+  const col = (x) => (f === 1 ? wrap(x) : shade(x, f));
   if (closed && ctx.createConicGradient) {
     const g = ctx.createConicGradient(-Math.PI / 2, cx, cy);
-    for (let i = 0; i <= 12; i++) g.addColorStop(i / 12, wrap(i / 12 + flowPh));
+    for (let i = 0; i <= 12; i++) g.addColorStop(i / 12, col(i / 12 + flowPh));
     return g;
   }
   const g = ctx.createLinearGradient(pts[0][0], 0, pts[pts.length - 1][0] || W, 0);
-  for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, wrap(i / 8 + flowPh));
+  for (let i = 0; i <= 8; i++) g.addColorStop(i / 8, col(i / 8 + flowPh));
   return g;
 }
 function draw(v) {
@@ -266,32 +269,33 @@ function draw(v) {
     for (let L = layers - 1; L >= 0; L--) {
       const src = L === 0 ? v : histAt(L * beatMs * (S.echoBeat || 0.25)) || v, grow = 1 + L * 0.12;
       const tips = pts.map((p, k) => [p[0] + p[2] * len(src[k]) * grow, p[1] + p[3] * len(src[k]) * grow]);
-      ctx.globalAlpha = L === 0 ? 1 : 0.45 / L;
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = L === 0 ? "source-over" : "multiply";  // overlapping echoes darken each other
       ctx.beginPath(); smooth(ctx, tips, closed);
       if (S.fill) {
         if (S.mirror) { const inner = pts.map((p, k) => [p[0] - p[2] * len(src[k]) * 0.5, p[1] - p[3] * len(src[k]) * 0.5]).reverse(); if (closed) { ctx.moveTo(inner[0][0], inner[0][1]); smooth(ctx, inner, true); } else { ctx.lineTo(inner[0][0], inner[0][1]); for (const p of inner) ctx.lineTo(p[0], p[1]); } }
         else if (closed) { const base = [...pts].reverse(); ctx.moveTo(base[0][0], base[0][1]); for (const p of base) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
         else { for (let k = N - 1; k >= 0; k--) ctx.lineTo(pts[k][0], pts[k][1]); ctx.closePath(); }
-        ctx.save(); ctx.globalAlpha *= 0.28; ctx.fillStyle = strokeGradient(); ctx.fill("evenodd"); ctx.restore();
+        ctx.save(); ctx.globalAlpha *= L === 0 ? 0.28 : 0.55; ctx.fillStyle = strokeGradient(L > 0); ctx.fill("evenodd"); ctx.restore();
       }
       ctx.beginPath(); smooth(ctx, tips, closed);
-      ctx.lineWidth = Math.max(1.5 * scale, lw * 0.55); ctx.strokeStyle = strokeGradient(); ctx.stroke();
+      ctx.lineWidth = Math.max(1.5 * scale, lw * 0.55); ctx.strokeStyle = strokeGradient(L > 0); ctx.stroke();
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
     return;
   }
   const layers = clamp(S.layers | 0, 1, 6);
   for (let L = layers - 1; L >= 1; L--) {
     const src = histAt(L * beatMs * (S.echoBeat || 0.25));
     if (!src || src.length !== N) break;
-    ctx.globalAlpha = 0.5 / L; ctx.lineWidth = lw; ctx.lineCap = "butt";
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "multiply"; ctx.lineWidth = lw; ctx.lineCap = "butt";
     for (let k = 0; k < N; k++) {
       const [x, y, nx, ny] = pts[k], h = len(src[k]) * (1 + L * 0.06), cap = Math.max(2 * scale, lw * 0.5);
-      ctx.strokeStyle = colour(k, N, src[k]);
+      ctx.strokeStyle = shade((S.colorBy === "level" ? src[k] : k / N) + flowPh, ECHO_SHADE);
       ctx.beginPath(); ctx.moveTo(x + nx * h, y + ny * h); ctx.lineTo(x + nx * (h + cap), y + ny * (h + cap)); ctx.stroke();
     }
   }
-  ctx.globalAlpha = 1; ctx.lineCap = S.rounded ? "round" : "butt";
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.lineCap = S.rounded ? "round" : "butt";
   const jit = (S.barShake || 0) * gap * 2.2;  // bar shake: each band jitters with its own level (owner 2026-11-22)
   for (let k = 0; k < N; k++) {
     let [x, y, nx, ny] = pts[k];
@@ -348,7 +352,7 @@ function frame(now) {
   const v = values();
   hist.unshift({ t: now, v: Float32Array.from(v) });
   while (hist.length > 2 && now - hist[hist.length - 1].t > 1800) hist.pop();
-  gradCache = null;
+  gradCache = echoGradCache = null;
   rot += S.rotate * TAU * dt * (closed || S.shape === "spiral" ? 1 : 0);
   hue = (hue + S.hueDrift * 360 * dt) % 360;
   flowPh = (flowPh + S.flow * dt * (1 + energy * 2.2 + pulse * 1.5)) % 1;
