@@ -34,6 +34,13 @@
     -webkit-mask-image: radial-gradient(circle, #000 52%, transparent 71%); opacity: 0; transition: opacity 600ms ease-out;
     background: radial-gradient(circle, rgba(0,0,0,.5) 0 38%, transparent 70%); }
   #rec.lyr #lyr { opacity: 1; }
+  /* bottom-left lyrics panel (owner 2026-11-22): left-aligned, fades at top and bottom, sits above the now-playing card */
+  #lyr.bl { position: absolute; left: 3.2vw; top: auto; bottom: calc(5.5vh + 128px); translate: none; width: min(40vw, 760px); height: 34vh;
+    border-radius: 0; background: none; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 72%, transparent); }
+  body.nocard #lyr.bl { bottom: 5.5vh; }
+  body.lyr-on #lyr.bl { opacity: 1; }
+  #lyr.bl #track { align-items: flex-start; }
+  #lyr.bl .ln { max-width: 100%; text-align: left; transform-origin: left center; text-shadow: 0 2px 24px rgba(0,0,0,.55); }
   #track { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: .55em;
     transition: transform 820ms cubic-bezier(.18,.9,.22,1.06); font-size: var(--fs, 20px); }
   .ln { max-width: 74%; text-align: center; line-height: 1.12; color: #fff; opacity: 0; filter: blur(6px); transform: scale(.78);

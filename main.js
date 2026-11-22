@@ -89,9 +89,27 @@ function startHelper() {
 const tell = (line) => helper && helper.stdin.writable && helper.stdin.write(line + "\n");
 const hwnd = () => viz.getNativeWindowHandle().readBigUInt64LE(0).toString();
 
+// Alt+Tab (owner 2026-11-22): a real entry in window / full screen. On the wallpaper the visualizer is part of the
+// desktop, which Windows never lists, so a minimised stand-in window carries the "Bandwave" entry; picking it
+// (Alt+Tab or the taskbar) opens full screen.
+let proxy = null;
+function syncProxy() {
+  const need = S.mode === "wallpaper" && !fullscreen;
+  if (need && !proxy) {
+    proxy = new BrowserWindow({ width: 480, height: 270, show: false, title: "Bandwave", icon: iconImage(), backgroundColor: "#000000", autoHideMenuBar: true });
+    proxy.loadURL("data:text/html,<title>Bandwave</title><body style='background:%23000'>");
+    proxy.once("ready-to-show", () => { proxy.showInactive(); proxy.minimize(); });
+    proxy.on("restore", () => setImmediate(() => { if (proxy) proxy.minimize(); setFullscreen(true); }));
+    proxy.on("close", (e) => { if (!app.isQuitting) { e.preventDefault(); proxy.minimize(); } });
+    proxy.on("closed", () => { proxy = null; });
+  } else if (!need && proxy) { const p = proxy; proxy = null; setImmediate(() => p.destroy()); }
+}
+
 function applyMode() {
   if (!viz) return;
   const b = screen.getPrimaryDisplay().bounds;
+  syncProxy();
+  viz.setSkipTaskbar(!fullscreen && S.mode === "wallpaper");
   viz.webContents.send("fullscreen", fullscreen);
   if (fullscreen) {
     tell(`unwallpaper ${hwnd()}`);
@@ -113,7 +131,7 @@ function applyMode() {
 function createViz() {
   const b = screen.getPrimaryDisplay().bounds;
   viz = new BrowserWindow({
-    ...b, frame: false, skipTaskbar: true, show: false, backgroundColor: "#000000", resizable: true,
+    ...b, title: "Bandwave", icon: iconImage(), frame: false, skipTaskbar: true, show: false, backgroundColor: "#000000", resizable: true,
     webPreferences: { preload: path.join(__dirname, "preload.js"), backgroundThrottling: false },
   });
   viz.setMenu(null);

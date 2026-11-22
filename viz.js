@@ -317,7 +317,7 @@ function record(dt) {
   Object.assign(el.style, { width: d + "px", height: d + "px", left: x - d / 2 + "px", top: y - d / 2 + "px", transform: `scale(${1 + pulse * S.beatPulse * 0.05})` });
   el.style.setProperty("--recGlow", recGlow);
   $("spin").style.transform = `rotate(${spinAng}deg)`;
-  $("track").style.setProperty("--fs", d * 0.062 + "px");
+  if (S.lyricsPos === "record") $("track").style.setProperty("--fs", d * 0.062 + "px");
 }
 const norm = (t) => t.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
 function buildLyrics() {
@@ -340,8 +340,10 @@ function buildLyrics() {
 function songTime() { return pos.pos + (pos.playing ? (Date.now() - pos.at) / 1000 : 0) + (S.lyricsOffset || 0); }
 function lyricsFrame() {
   const rec = $("rec"), lines = lyr.lines || [];
-  const show = S.lyrics && lines.length > 0 && rec.classList.contains("on");
-  rec.classList.toggle("lyr", show);
+  const bl = S.lyricsPos !== "record";
+  const show = S.lyrics && lines.length > 0 && (bl ? !!media.title : rec.classList.contains("on"));
+  rec.classList.toggle("lyr", show && !bl);
+  document.body.classList.toggle("lyr-on", show && bl);
   if (!show) return;
   const t = songTime();
   let i = -1;
@@ -404,6 +406,15 @@ function scene() {
   $("clock").classList.toggle("on", !!S.clock);
   document.body.classList.toggle("drag", !fullscreen && S.mode !== "wallpaper");
   keyGuide();
+  // lyrics live in the record or in the bottom-left panel: move the one node between the two
+  const lyrEl = $("lyr"), bl = S.lyricsPos !== "record";
+  if (bl !== lyrEl.classList.contains("bl")) {
+    lyrEl.classList.toggle("bl", bl);
+    (bl ? document.body : $("rec")).append(lyrEl);
+    if (bl) $("track").style.setProperty("--fs", "clamp(22px, 1.75vw, 44px)");
+    lyrIdx = -2;  // recentre the current line in the new box
+  }
+  document.body.classList.toggle("nocard", S.card === "hidden" || S.card === "top-left");
   buildLut();
 }
 function tick() {

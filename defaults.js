@@ -47,7 +47,8 @@ const DEFAULTS = {
   coverCenter: true,        // spinning record in the centre (album art label, song name around the groove)
   spin: 0.12,               // record turns per second while playing
   lyrics: true,             // time-synced lyrics inside the record (LRCLIB)
-  lyricsOffset: 0,          // seconds; + shows lines earlier
+  lyricsOffset: 0,
+  lyricsPos: "bottom-left", // bottom-left (above the now-playing card) | record (inside the spinning record)          // seconds; + shows lines earlier
   card: "bottom-left",      // bottom-left | bottom-center | top-left | hidden
   clock: true, clock24: false,
   keyGuide: true,           // translucent list of keys, top right
