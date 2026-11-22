@@ -95,7 +95,9 @@ function renderProfiles() {
     b.append(name);
     if (isMine) {
       const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.title = `Delete ${name}`; x.setAttribute("aria-label", `Delete ${name}`);
+      x.tabIndex = 0; x.setAttribute("role", "button");
       x.onclick = async (e) => { e.stopPropagation(); profiles = await window.bw.deleteProfile(name); renderProfiles(); toast(`Deleted “${name}”`); };
+      x.onkeydown = (e) => { if (e.key === "Enter" || e.key === " " || e.key === "Delete") { e.preventDefault(); e.stopPropagation(); x.click(); } };
       b.append(x);
     } else { const s = document.createElement("small"); s.textContent = "preset"; b.append(s); }
     b.onclick = () => { isMine ? window.bw.loadProfile(name) : window.bw.set(PRESETS[name]); toast(`Loaded “${name}”`); };

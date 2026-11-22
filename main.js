@@ -6,6 +6,9 @@ const fs = require("fs");
 const path = require("path");
 const DEFAULTS = require("./defaults");
 
+// BW_TEST=<folder>: button test run (test/buttons.js) with its own settings, no helper, no shortcuts, nothing sent to Spotify
+const TEST = process.env.BW_TEST;
+if (TEST) app.setPath("userData", TEST);
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const FILE = path.join(app.getPath("userData"), "settings.json");
@@ -97,7 +100,8 @@ function startHelper() {
   helper.on("exit", () => { helper = null; if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
 }
 let queued = [];  // commands sent while the helper is (re)starting go out once it is back
-const tell = (line) => { if (helper && helper.stdin.writable) helper.stdin.write(line + "\n"); else if (queued.push(line) > 20) queued.shift(); };
+const told = [];
+const tell = (line) => { if (TEST) { told.push(line); return; } if (helper && helper.stdin.writable) helper.stdin.write(line + "\n"); else if (queued.push(line) > 20) queued.shift(); };
 const hwnd = () => viz.getNativeWindowHandle().readBigUInt64LE(0).toString();
 
 // Alt+Tab (owner 2026-11-22): a real entry in window / full screen. On the wallpaper the visualizer is part of the
@@ -187,7 +191,7 @@ function iconImage() { return nativeImage.createFromPath(path.join(__dirname, "i
 function buildTray() {
   tray = new Tray(iconImage());
   tray.setToolTip("Bandwave");
-  const menu = () => Menu.buildFromTemplate([
+  const menu = tray.menu = () => Menu.buildFromTemplate([
     { label: "Settings", click: openSettings },
     { label: "Full screen  (Ctrl+Alt+F)", click: () => setFullscreen(!fullscreen) },
     { label: "Album mode (colours from the cover)", type: "checkbox", checked: S.theme === "album",
@@ -210,7 +214,7 @@ function buildTray() {
 function set(patch) {
   const modeChanged = "mode" in patch && patch.mode !== S.mode;
   S = { ...S, ...patch };
-  if ("startup" in patch) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: [app.getAppPath()] });  // unpackaged: electron.exe + this folder
+  if ("startup" in patch && !TEST) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: [app.getAppPath()] });  // unpackaged: electron.exe + this folder
   save();
   broadcast("settings", S);
   if (modeChanged) { fullscreen = false; applyMode(); }
@@ -218,6 +222,11 @@ function set(patch) {
 }
 
 app.whenReady().then(() => {
+  if (TEST) {
+    createViz(); buildTray();
+    return require("./test/buttons")({ app, get viz() { return viz; }, get settingsWin() { return settingsWin; }, get browseWin() { return browseWin; },
+      get S() { return S; }, get fullscreen() { return fullscreen; }, told, tray, openSettings, toggleBrowse, readProfiles, DEFAULTS });
+  }
   startHelper();
   createViz();
   buildTray();
