@@ -10,6 +10,17 @@ const DEFAULTS = require("./defaults");
 const TEST = process.env.BW_TEST;
 if (TEST) app.setPath("userData", TEST);
 if (!app.requestSingleInstanceLock()) app.quit();
+// a window Windows thinks is covered stops drawing; Bandwave must always draw
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+
+// bandwave.log in userData (owner 2026-11-23 "bars randomly stop expanding"): helper messages, audio watchdog
+// restarts and a 10 s health line from the visualizer, so a freeze can be traced to its moment
+const LOG = path.join(app.getPath("userData"), "bandwave.log");
+function log(...a) {
+  const line = `${new Date().toISOString()} ${a.join(" ")}\n`;
+  try { if (fs.statSync(LOG).size > 2e6) fs.renameSync(LOG, LOG + ".1"); } catch {}
+  try { fs.appendFileSync(LOG, line); } catch {}
+}
 
 const FILE = path.join(app.getPath("userData"), "settings.json");
 const PFILE = path.join(app.getPath("userData"), "profiles.json");  // owner's named looks: { name: settings }
@@ -85,20 +96,33 @@ function startHelper() {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       try {
         const m = JSON.parse(line);
-        if (m.type === "log") console.log("[helper]", m.msg);
+        if (m.type === "log") log("[helper]", m.msg);
         if (m.type === "hit" || m.type === "bpm") { if (viz && !viz.isDestroyed()) viz.webContents.send(m.type, m); continue; }
-        if (m.type === "spec") { if (viz && !viz.isDestroyed()) viz.webContents.send("spec", m.v); continue; }
+        if (m.type === "spec") { specs++; lastSpecAt = Date.now(); if (viz && !viz.isDestroyed()) viz.webContents.send("spec", m.v); continue; }
         if (m.type === "pos") broadcast("pos", m);
         if (m.type === "browse" && browseWin && !browseWin.isDestroyed()) browseWin.webContents.send("browse", m);
         if (m.type === "media") { media = { ...media, ...m }; if (!("cover" in m) && m.title === null) media.cover = null; broadcast("media", media); fetchLyrics(media); }
       } catch {}
     }
   });
-  helper.stderr.on("data", (d) => process.stderr.write(d));
+  helper.stderr.on("data", (d) => { process.stderr.write(d); log("[helper stderr]", String(d).trim()); });
   if (lastBands) tell(`bands ${lastBands}`);  // a restarted helper needs the band layout again
   for (const l of queued.splice(0)) tell(l);
-  helper.on("exit", () => { helper = null; if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
+  lastSpecAt = Date.now();
+  const me = helper;
+  helper.on("exit", (code) => { log("[helper] exited", code); if (helper === me) helper = null; if (!app.isQuitting) setTimeout(startHelper, 3000); });  // crash: restart it
 }
+// audio watchdog: the helper sends a spectrum ~60x a second, silence included, so 4 s without one means its capture
+// is stuck (a hung WASAPI read after sleep / a device change); kill it and the exit handler starts a fresh one
+let lastSpecAt = Date.now(), specs = 0;
+setInterval(() => {
+  if (TEST || !helper || !lastBands || Date.now() - lastSpecAt < 4000) return;
+  log("[watchdog] no audio for", ((Date.now() - lastSpecAt) / 1000).toFixed(1), "s: restarting the helper");
+  lastSpecAt = Date.now();
+  // the venv python.exe is a launcher with the real python as its child: kill the whole tree
+  spawn("taskkill.exe", ["/T", "/F", "/PID", String(helper.pid)], { windowsHide: true }).on("error", () => {});
+}, 1000);
+ipcMain.on("health", (_e, h) => { log("[viz]", `spec/s ${(specs / 10).toFixed(0)}`, h); specs = 0; });
 let queued = [];  // commands sent while the helper is (re)starting go out once it is back
 const told = [];
 const tell = (line) => { if (TEST) { told.push(line); return; } if (helper && helper.stdin.writable) helper.stdin.write(line + "\n"); else if (queued.push(line) > 20) queued.shift(); };

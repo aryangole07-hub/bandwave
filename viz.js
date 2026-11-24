@@ -13,6 +13,7 @@ let bands = [], raw = new Float32Array(0), levels = new Float32Array(0), hist = 
 let pts = [], closed = true, cx = 0, cy = 0, R = 1, gap = 4;
 let rot = 0, hue = 0, pulse = 0, bassAvg = 0.1, lastBeat = 0, particles = [], last = performance.now();
 let spec = null;  // latest dB per band from the helper
+let specAt = 0, frames = 0, lastPeak = -240, lastEdges = null;  // health / band-layout guard
 // drums + tempo: onsets from spectral flux (kick < 150 Hz, snare/hats 1.5-8 kHz); BPM from the spacing of kicks
 let agcRef = -22;  // running loudest-band level in dB (auto-gain)
 let prevRaw = new Float32Array(0), fluxAvg = 0, fluxVar = 0.001, lastOnset = 0, kicks = [], beatMs = 500, lyricPulse = 0;
@@ -101,6 +102,7 @@ function buildBands() {
     e = Array.from({ length: n + 1 }, (_, i) => g(a + ((b - a) * i) / n));
   }
   if (e.length < 3) e = [60, 250, 1000, 4000];
+  lastEdges = e;
   window.bw.setBands(e);  // the helper captures the system audio and reduces its FFT to these bands
   spec = null;
   const hz = sr / 16384;
@@ -123,6 +125,7 @@ function analyse(dt) {
     // auto-gain (owner 2026-11-22 "looks like a quiet song"): follow the loudest band (fast up, slow down) and lift
     // quiet input (low Spotify volume, soft masters) by up to 30 dB so the bars use their full height
     let peak = -240; for (let i = 0; i < n; i++) if (spec[i] > peak) peak = spec[i];
+    lastPeak = peak;
     if (peak > -110) agcRef += (peak - agcRef) * Math.min(1, dt * (peak > agcRef ? 4 : 0.15));
     const gain = clamp(-22 - agcRef, 0, 30);
     for (let i = 0; i < n; i++) {
@@ -398,6 +401,7 @@ function drawParticles(dt) {
 
 function frame(now) {
   requestAnimationFrame(frame);
+  frames++;
   if (!S || !pts.length) return;
   if (now - last < 1000 / (S.fps || 60) - 2) return;  // 120/144 Hz screens: don't draw more than the cap
   const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
@@ -614,7 +618,17 @@ function wake() { document.body.classList.remove("nocursor"); clearTimeout(idle)
 addEventListener("mousemove", wake); addEventListener("mousedown", wake); wake();
 setInterval(tick, 1000);
 
-window.bw.onSpec((v) => { spec = v; });
+
+window.bw.onSpec((v) => { spec = v; specAt = performance.now(); });
+// health line for bandwave.log every 10 s; and if the helper's spectrum has the wrong band count (it lost the layout),
+// send the layout again instead of drawing flat bars forever
+setInterval(() => {
+  const age = specAt ? ((performance.now() - specAt) / 1000).toFixed(1) : "never", n = bands.length;
+  let mean = 0; for (let i = 0; i < n; i++) mean += levels[i];
+  window.bw.health(`fps ${(frames / 10).toFixed(0)} specAge ${age}s bands ${spec ? spec.length : 0}/${n} peak ${lastPeak.toFixed(0)}dB agc ${agcRef.toFixed(0)} gain ${clamp(-22 - agcRef, 0, 30).toFixed(0)} level ${(n ? mean / n : 0).toFixed(2)} bpm ${(60000 / beatMs).toFixed(0)} hidden ${document.hidden}`);
+  frames = 0;
+}, 10000);
+setInterval(() => { if (spec && spec.length !== bands.length && lastEdges) { window.bw.setBands(lastEdges); spec = null; } }, 1000);
 async function startAudioUnused() {  // kept for reference: Chromium loopback needed a screen capture (cursor stalls)
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: 1, height: 1, frameRate: 1 }, audio: true });

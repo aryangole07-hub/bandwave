@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("bw", {
   escape: () => ipcRenderer.send("escape"),
   toggleBrowse: () => ipcRenderer.send("toggle-browse"),
   setBands: (edges) => ipcRenderer.send("bands", edges),
+  health: (h) => ipcRenderer.send("health", h),
   onSpec: (fn) => ipcRenderer.on("spec", (_e, v) => fn(v)),
   onHit: (fn) => ipcRenderer.on("hit", (_e, m) => fn(m)),
   onBpm: (fn) => ipcRenderer.on("bpm", (_e, m) => fn(m)),
