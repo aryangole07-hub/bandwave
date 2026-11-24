@@ -2,3 +2,7 @@ node_modules/
 .venv/
 *.log
 @AutomationLog.txt
+__pycache__/
+dist/
+build/
+*.spec

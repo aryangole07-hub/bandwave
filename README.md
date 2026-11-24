@@ -1,20 +1,13 @@
 # Bandwave
 
-Live music visualizer for the Windows desktop. It sits behind your desktop icons (or in a window / on top / full screen),
-reacts to whatever your PC is playing, and shows the Spotify (or any player's) song, artist and cover.
+A live music visualizer for your desktop: it reacts to whatever your computer is playing, shows the song, artist, cover
+and synced lyrics, and can sit behind your desktop icons like a wallpaper.
 
-- Start: double-click `start.vbs`. It lives in the tray; click the tray icon for settings.
-- Shapes: circle, polygon, star, heart, infinity, spiral, line, wave. Styles: bars, smooth curve, dots, LED blocks.
-- Bands: count, lowest/highest Hz with log/mel/linear spacing, or your own band edges in Hz.
-- Shortcuts: F full screen (in Bandwave), Ctrl+Alt+Space play/pause, Ctrl+Alt+Left/Right skip.
+| Folder | What |
+|---|---|
+| [`windows/`](windows) | Windows 10/11 app (Electron + a small Python helper for system audio and now playing). Build: `windows/README.md`. |
+| [`mac/`](mac) | macOS app (Electron only; AppleScript for Spotify / Music). Build: `mac/README.md`. |
 
-How it works: Electron draws the visualizer on a canvas from Chromium's system-audio loopback (Web Audio FFT, 16384 points).
-`helper/media.py` reads the Windows media session (title, artist, cover, play/pause/skip) and pins the window into the
-desktop's WorkerW layer behind the icons. Settings: `%APPDATA%\bandwave\settings.json`.
-
-Setup (already done here): `npm install`, then `py -3.12 -m venv .venv` and
-`.venv\Scripts\pip install winrt-runtime winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections`.
-
-Test hooks: `BW_DEMO=1` feeds a fake spectrum; `BW_SNAP=<dir>` saves both windows as PNG and quits; `BW_SET=<json>` overrides settings for that run.
-
-uiautomation (pip) is also needed for the Spotify browser.
+**Just want to use it?** Get it from [Releases](../../releases):
+- Windows: `Bandwave-Setup.exe`, double-click it and it installs and opens. If you see "Windows protected your PC", click More info -> Run anyway.
+- Mac: `Bandwave-arm64.dmg` (Apple silicon) or `Bandwave-x64.dmg` (Intel), then follow the first-open steps in `mac/README.md`.

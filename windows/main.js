@@ -86,8 +86,10 @@ async function fetchLyrics(m, retry = false) {
 }
 
 function startHelper() {
-  const py = path.join(__dirname, ".venv", "Scripts", "python.exe");
-  helper = spawn(py, [path.join(__dirname, "helper", "media.py")], { windowsHide: true });
+  // installed: the frozen helper from resources\helper; from source: the venv's python
+  helper = app.isPackaged
+    ? spawn(path.join(process.resourcesPath, "helper", "bandwave-helper.exe"), [], { windowsHide: true })
+    : spawn(path.join(__dirname, ".venv", "Scripts", "python.exe"), [path.join(__dirname, "helper", "media.py")], { windowsHide: true });
   let buf = "";
   helper.stdout.on("data", (d) => {
     buf += d;
@@ -243,7 +245,7 @@ function buildTray() {
 function syncSpotifyWatch() {
   if (TEST) return;
   const key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", name = "Bandwave with Spotify";
-  const vbs = path.join(__dirname, "spotify-watch.vbs");
+  const vbs = path.join(app.isPackaged ? process.resourcesPath : __dirname, "spotify-watch.vbs");  // wscript can't read inside app.asar
   const args = S.withSpotify ? ["add", key, "/v", name, "/t", "REG_SZ", "/d", `wscript.exe "${vbs}"`, "/f"] : ["delete", key, "/v", name, "/f"];
   spawn("reg.exe", args, { windowsHide: true }).on("error", () => {});
   if (S.withSpotify) spawn("wscript.exe", [vbs], { windowsHide: true, detached: true, stdio: "ignore" }).unref();  // start watching now, not only after the next logon
@@ -273,7 +275,7 @@ function set(patch) {
   const modeChanged = "mode" in patch && patch.mode !== S.mode;
   S = { ...S, ...patch };
   if ("withSpotify" in patch) syncSpotifyWatch();
-  if ("startup" in patch && !TEST) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: [app.getAppPath()] });  // unpackaged: electron.exe + this folder
+  if ("startup" in patch && !TEST) app.setLoginItemSettings({ openAtLogin: !!S.startup, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] });  // unpackaged: electron.exe + this folder
   save();
   broadcast("settings", S);
   if (modeChanged) { fullscreen = false; applyMode(); }

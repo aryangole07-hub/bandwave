@@ -1,9 +1,0 @@
-{
-  "name": "bandwave",
-  "version": "0.1.0",
-  "description": "Live music visualizer for the Windows desktop wallpaper",
-  "main": "main.js",
-  "private": true,
-  "scripts": { "start": "electron ." },
-  "devDependencies": { "electron": "33.2.1" }
-}
