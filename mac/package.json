@@ -7,7 +7,7 @@
   "author": "Bandwave",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac dmg"
+    "dist": "electron-builder --mac dmg --arm64 --x64"
   },
   "devDependencies": {
     "electron": "44.11.5",
