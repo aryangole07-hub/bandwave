@@ -7,7 +7,7 @@
   "author": "Bandwave",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac dmg --arm64 --x64"
+    "dist": "electron-builder --mac dmg --universal"
   },
   "devDependencies": {
     "electron": "44.11.5",
@@ -35,8 +35,7 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "universal"
           ]
         }
       ],
@@ -52,7 +51,7 @@
       }
     },
     "dmg": {
-      "artifactName": "Bandwave-${arch}.dmg"
+      "artifactName": "Bandwave-Mac.dmg"
     }
   }
 }

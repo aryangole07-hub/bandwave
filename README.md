@@ -10,4 +10,4 @@ and synced lyrics, and can sit behind your desktop icons like a wallpaper.
 
 **Just want to use it?** Get it from [Releases](../../releases):
 - Windows: `Bandwave-Setup.exe`, double-click it and it installs and opens. If you see "Windows protected your PC", click More info -> Run anyway.
-- Mac: `Bandwave-arm64.dmg` (Apple silicon) or `Bandwave-x64.dmg` (Intel), then follow the first-open steps in `mac/README.md`.
+- Mac: `Bandwave-Mac.dmg` (any Mac on macOS 12 Monterey or newer), then follow the first-open steps in `mac/README.md`.

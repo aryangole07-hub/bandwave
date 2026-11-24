@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+      - run: npx electron-builder --mac dmg --universal --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: Bandwave-mac

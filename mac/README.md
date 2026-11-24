@@ -5,8 +5,7 @@ ported to macOS. It lives in the menu bar; click the icon for settings.
 
 ## Install
 
-1. Download the `.dmg` for your Mac from the release (or the latest "Build Mac app" run under the Actions tab):
-   `Bandwave-arm64.dmg` for Apple silicon (M1 to M4), `Bandwave-x64.dmg` for Intel.
+1. Download `Bandwave-Mac.dmg` from the release (one file for both Apple silicon and Intel Macs; needs macOS 12 Monterey or newer).
 2. Open it and drag Bandwave into Applications.
 3. The app isn't notarised by Apple, so the first open is blocked. Open it once, then go to **System Settings -> Privacy & Security**,
    scroll down and click **Open Anyway** (on macOS 14 and older you can instead right-click the app -> Open).
