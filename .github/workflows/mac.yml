@@ -1,0 +1,33 @@
+# Builds the Mac app (mac/) into Bandwave-arm64.dmg (Apple silicon) and Bandwave-x64.dmg (Intel).
+# Runs on every push to main that touches mac/, or by hand (Actions tab -> "Build Mac app" -> Run workflow).
+# The .dmg files are under the run's Artifacts; on a v* tag they are also attached to that release.
+name: Build Mac app
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mac/**", ".github/workflows/mac.yml"]
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  mac:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx electron-builder --mac dmg --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bandwave-mac
+          path: mac/dist/*.dmg
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
