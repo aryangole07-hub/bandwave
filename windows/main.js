@@ -179,9 +179,17 @@ function createViz() {
     ...b, title: "Bandwave", icon: iconImage(), frame: false, skipTaskbar: true, show: false, backgroundColor: "#000000", resizable: true,
     webPreferences: { preload: path.join(__dirname, "preload.js"), backgroundThrottling: false },
   });
+  const vw = viz;
   viz.setMenu(null);
   viz.loadFile("viz.html", process.env.BW_DEMO ? { query: { demo: "1" } } : undefined);
-  viz.webContents.once("did-finish-load", () => { viz.webContents.send("settings", S); viz.webContents.send("media", media); viz.webContents.send("lyrics", lyrics); applyMode(); });
+  viz.webContents.on("did-finish-load", () => { viz.webContents.send("settings", S); viz.webContents.send("media", media); viz.webContents.send("lyrics", lyrics); applyMode(); });
+  // owner 2026-11-25 "not working, full screen does nothing": the visualizer's renderer died 30 s after launch and the
+  // window stayed empty. A dead or hung renderer is now logged and the page reloaded (did-finish-load re-sends state).
+  vw.webContents.on("render-process-gone", (_e, d) => {
+    log("[viz] renderer gone:", d.reason, d.exitCode);
+    if (!app.isQuitting && !vw.isDestroyed()) setTimeout(() => !vw.isDestroyed() && vw.webContents.reload(), 1000);
+  });
+  vw.on("unresponsive", () => { log("[viz] renderer hung: restarting it"); vw.webContents.forcefullyCrashRenderer(); });
   viz.on("closed", () => { viz = null; });
 }
 

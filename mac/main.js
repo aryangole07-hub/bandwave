@@ -171,7 +171,14 @@ function createViz(desktop = S.mode === "wallpaper" && !fullscreen) {
   w.isDesktop = desktop;
   viz = w;
   w.loadFile("viz.html", process.env.BW_DEMO ? { query: { demo: "1" } } : undefined);
-  w.webContents.once("did-finish-load", () => { w.webContents.send("settings", S); w.webContents.send("media", media); w.webContents.send("lyrics", lyrics); applyMode(); });
+  w.webContents.on("did-finish-load", () => { w.webContents.send("settings", S); w.webContents.send("media", media); w.webContents.send("lyrics", lyrics); applyMode(); });
+  // owner 2026-11-25 "not working, full screen does nothing": the visualizer's renderer died 30 s after launch and the
+  // window stayed empty. A dead or hung renderer is now logged and the page reloaded (did-finish-load re-sends state).
+  w.webContents.on("render-process-gone", (_e, d) => {
+    log("[viz] renderer gone:", d.reason, d.exitCode);
+    if (!app.isQuitting && !w.isDestroyed()) setTimeout(() => !w.isDestroyed() && w.webContents.reload(), 1000);
+  });
+  w.on("unresponsive", () => { log("[viz] renderer hung: restarting it"); w.webContents.forcefullyCrashRenderer(); });
   w.on("closed", () => { if (viz === w) viz = null; });
 }
 
