@@ -121,16 +121,22 @@ class Loopback:
                     avail = stream.get_read_available()
                     now = time.time()
                     if avail >= HOP:
-                        pending = np.concatenate([pending, np.frombuffer(stream.read(avail, exception_on_overflow=False), np.float32).reshape(-1, ch).mean(axis=1)])
-                        last_data = last_real = now
-                    elif now - last_real > 5:  # nothing for 5 s: silence, or a dead stream (Bluetooth reconnect); reopen
+                        got = np.frombuffer(stream.read(avail, exception_on_overflow=False), np.float32).reshape(-1, ch).mean(axis=1)
+                        pending = np.concatenate([pending, got])
+                        last_data = now
+                        if got.any():
+                            last_real = now
+                    if now - last_real > 5:
+                        # 5 s with no sound: silence, or a dead stream. Owner 2026-11-25 "bars not working": after a Bluetooth
+                        # reconnect the old endpoint kept sending exact zeros, so only real (non-zero) audio counts as alive
                         break
-                    elif now - last_data > 0.03:  # loopback delivers nothing during silence: keep time moving with zeros
+                    if avail < HOP:
+                        if now - last_data <= 0.03:
+                            time.sleep(0.004)
+                            continue
+                        # loopback delivers nothing during silence: keep time moving with zeros
                         pending = np.concatenate([pending, np.zeros(int((now - last_data) * self.rate), np.float32)])
                         last_data = now
-                    else:
-                        time.sleep(0.004)
-                        continue
                     while len(pending) >= HOP:
                         chunk, pending = pending[:HOP], pending[HOP:]
                         buf = np.concatenate([buf[HOP:], chunk])
@@ -163,6 +169,8 @@ class Loopback:
                         if p.get_default_wasapi_loopback()["index"] != dev["index"]:
                             break
                 stream.close()
+                p.terminate()
+                p = pa.PyAudio()  # PortAudio lists devices once per instance: a stale list keeps the dead endpoint
             except Exception as e:
                 self.emit({"type": "log", "msg": f"loopback: {type(e).__name__}: {e}"})
                 time.sleep(2)
